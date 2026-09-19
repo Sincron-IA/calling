@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "project_id": "",
+  "client_id": "",
+  "client_name": "Sincron",
+  "project_name": "calling",
+  "repo": "https://github.com/Sincron-IA/calling",
+  "default_branch": "main",
+  "active_card_id": "",
+  "stack": {
+    "framework": "vite-react",
+    "database": "none",
+    "hosting": "vercel",
+    "language": "typescript",
+    "package_manager": "npm"
+  },
+  "integrations": {
+    "github": true,
+    "vercel": true,
+    "supabase": false,
+    "sentry": false,
+    "signoz": false,
+    "sincron_tarefas": true,
+    "sincron_env": true,
+    "sincron_feedback": false
+  },
+  "security_profile": {
+    "data_classification": "internal",
+    "requires_lgpd_review": false,
+    "requires_rbac": false,
+    "requires_rls": false,
+    "requires_audit_logs": false,
+    "requires_security_gate": true
+  },
+  "commands": {
+    "build": "npm run build",
+    "typecheck": "npm run typecheck",
+    "lint": "",
+    "test": ""
+  }
+}

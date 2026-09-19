@@ -1,0 +1,24 @@
+# deps
+node_modules/
+
+# build
+dist/
+build/
+*.tsbuildinfo
+
+# env / segredos (NUNCA commitar)
+.env
+.env.*
+!.env.example
+.sinc-env/
+.sincron/local/
+
+# electron
+electron/out/
+electron/dist/
+
+# logs e sistema
+*.log
+npm-debug.log*
+.DS_Store
+.vercel
