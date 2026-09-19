@@ -25,6 +25,9 @@
 - Logs registram só evento e duração. Nunca transcrição, resposta de agente,
   token ou chave.
 - CORS explícito por `CALLING_ALLOWED_ORIGINS`.
+- O bridge escuta **apenas em loopback** (`127.0.0.1`) por padrão; só um
+  `CALLING_BIND_HOST` explícito no `.env` faz ele aceitar conexões de outras
+  interfaces de rede.
 
 ## O risco que você precisa conhecer
 

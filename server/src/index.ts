@@ -7,6 +7,10 @@ import { createLiveToken } from './gemini.js'
 
 const PORT = Number(process.env.PORT || 8787)
 
+// O bridge so deve ser alcancado por localhost (tunel SSH ou proxy reverso na
+// mesma maquina). Sem host explicito, o Node escutaria em todas as interfaces.
+const HOST = process.env.CALLING_BIND_HOST || '127.0.0.1'
+
 const allowedOrigins = (
   process.env.CALLING_ALLOWED_ORIGINS || 'http://localhost:5173'
 )
@@ -83,7 +87,7 @@ app.post('/api/end-call', requireSecret, (req, res) => {
   res.json({ ok: true })
 })
 
-app.listen(PORT, () => {
-  console.log(`[calling] bridge ouvindo em http://localhost:${PORT}`)
+app.listen(PORT, HOST, () => {
+  console.log(`[calling] bridge ouvindo em http://${HOST}:${PORT}`)
   console.log(`[calling] agentes: ${publicAgentList().map((a) => a.slug).join(', ')}`)
 })
