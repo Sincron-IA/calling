@@ -1,8 +1,9 @@
 # Calling
 
 Ligacao por voz com os agentes DG Claw da Sincron (Automa, Ivo, Theo, Bravo,
-Flow, Vetor). Voce abre o app, escolhe um agente, aperta **Ligar** e conversa
-falando — ele responde em voz alta.
+Flow, Vetor). Voce abre o app, **toca no avatar** do agente e conversa falando —
+ele responde em voz alta. Os outros cinco ficam numa fila de avatares ao lado;
+tocar num deles troca de agente. E uma ligacao por vez.
 
 A parte que importa: **quem responde e o agente de verdade**, com a identidade e
 a memoria dele. A Gemini Live API entra so como ouvido e boca. Leia

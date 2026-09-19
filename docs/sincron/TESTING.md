@@ -54,7 +54,8 @@ turno anterior valida a continuidade da sessão.
 
 - Login/logout: não se aplica
 - Permissões: chamada sem `Authorization` deve dar 401
-- Fluxo principal: escolher agente → Ligar → falar → ouvir → Desligar
+- Fluxo principal: tocar no avatar → chamando → falar → ouvir → tocar de novo (ou Desligar)
+- Troca de agente: tocar num avatar da fila durante a ligacao encerra a atual e abre a nova
 - Fluxo administrativo: não se aplica
 - Erro esperado: bridge fora do ar → o app mostra o erro e não trava
 - Upload/anexos: não se aplica

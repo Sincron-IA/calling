@@ -48,36 +48,184 @@ body {
   color: var(--muted);
 }
 
-.picker {
+/* Avatar de agente: o clique nele e que liga, atende e desliga. */
+.avatar {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
-.picker__item {
-  padding: 10px 18px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 0.95rem;
+.avatar__stage {
+  position: relative;
+  display: block;
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+}
+
+.avatar__disc {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: radial-gradient(circle at 50% 38%, #1b2128, var(--surface) 70%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1), border-color 0.45s ease,
+    box-shadow 0.6s ease;
 }
 
-.picker__item:hover:not(:disabled) {
-  border-color: #3a4451;
+.avatar:hover .avatar__disc:not(:disabled) {
+  transform: scale(1.04);
+  border-color: var(--avatar-color);
 }
 
-.picker__item.is-selected {
-  border-color: var(--accent);
-  background: #17231b;
-}
-
-.picker__item:disabled {
+.avatar__disc:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.avatar__disc:focus-visible {
+  outline: none;
+  border-color: var(--avatar-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--avatar-color) 35%, transparent);
+}
+
+.avatar__halo {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 1px solid var(--avatar-color);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+
+.avatar__mono {
+  font-size: calc(var(--avatar-size) * 0.36);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--avatar-color);
+  opacity: 0.85;
+  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.avatar__orb {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.avatar__name {
+  font-size: 0.85rem;
+  color: var(--muted);
+  transition: color 0.4s ease, opacity 0.35s ease;
+}
+
+.avatar--main .avatar__name {
+  font-size: 1.05rem;
+  color: var(--text);
+}
+
+/* Chamando: respiracao lenta, sem susto. */
+.avatar.is-ringing .avatar__halo {
+  animation: avatar-breathe 3.2s ease-in-out infinite;
+}
+
+.avatar.is-ringing .avatar__disc {
+  border-color: color-mix(in srgb, var(--avatar-color) 45%, var(--border));
+}
+
+/* Na linha: brilho estavel; quem se mexe sao as barras do orb. */
+.avatar.is-live .avatar__halo {
+  opacity: 0.5;
+  box-shadow: 0 0 28px -8px var(--avatar-color);
+}
+
+.avatar.is-live .avatar__disc {
+  border-color: var(--avatar-color);
+}
+
+.avatar.is-ringing .avatar__mono,
+.avatar.is-live .avatar__mono {
+  opacity: 0.14;
+  transform: scale(0.82);
+}
+
+@keyframes avatar-breathe {
+  0%,
+  100% {
+    opacity: 0.16;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.62;
+    transform: scale(1.045);
+  }
+}
+
+/* A fila dos outros agentes: empilhados, abrem em leque no hover/foco. */
+.queue {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-left: 16px;
+}
+
+.queue .avatar {
+  margin-left: -16px;
+  transition: margin-left 0.45s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.queue:hover .avatar,
+.queue:focus-within .avatar {
+  margin-left: 10px;
+}
+
+/* Empilhados, os nomes nao ocupam largura — senao os discos nao se sobrepoem. */
+.queue .avatar__name {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  transition: opacity 0.35s ease, width 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.queue:hover .avatar__name,
+.queue:focus-within .avatar__name {
+  opacity: 1;
+  width: calc(var(--avatar-size) + 12px);
+}
+
+.queue .avatar:hover {
+  transform: translateY(-4px);
+}
+
+/* Sem hover (celular): a fila ja nasce aberta e com os nomes a mostra. */
+@media (hover: none) {
+  .queue {
+    flex-wrap: wrap;
+    gap: 14px;
+    padding-left: 0;
+  }
+
+  .queue .avatar {
+    margin-left: 0;
+  }
+
+  .queue .avatar__name {
+    opacity: 1;
+    width: calc(var(--avatar-size) + 12px);
+  }
 }
 
 .stage {
@@ -121,6 +269,15 @@ body {
   width: 100%;
   display: flex;
   justify-content: center;
+  min-height: 52px;
+  align-items: center;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
 }
 
 .btn {
@@ -143,10 +300,21 @@ body {
   cursor: not-allowed;
 }
 
-.btn--call {
-  background: var(--accent);
-}
-
 .btn--hangup {
   background: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar__disc,
+  .avatar__mono,
+  .avatar__name,
+  .queue .avatar,
+  .queue .avatar__name {
+    transition: none;
+  }
+
+  .avatar.is-ringing .avatar__halo {
+    animation: none;
+    opacity: 0.4;
+  }
 }
