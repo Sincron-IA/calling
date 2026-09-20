@@ -176,6 +176,10 @@ Detalhes em [`docs/sincron/DEPLOYMENT.md`](docs/sincron/DEPLOYMENT.md).
 
 - `GEMINI_API_KEY` fica **so no servidor**. O browser recebe um token efemero
   (uso unico, validade curta, modelo e config travados).
+  Nao passe `lockAdditionalFields` ao criar esse token: no `@google/genai`
+  2.23.0 ele faz o SDK derivar um `field_mask` invalido quando a config tem
+  `tools` (400 `field_mask is invalid for BidiGenerateContentSetup`). Sem o
+  campo, a API ja trava tudo que foi enviado no setup. Ver `server/src/gemini.ts`.
 - O acesso do app e por um segredo compartilhado — deliberadamente simples,
   porque isto e ferramenta pessoal do Luiz e do Matheus, nao produto multiusuario.
 - Chamada recebida e diferente: cada agente tem **credencial propria**

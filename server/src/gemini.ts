@@ -104,8 +104,16 @@ export async function createLiveToken(agent: AgentEntry): Promise<LiveTokenPaylo
       expireTime: new Date(now + 30 * 60 * 1000).toISOString(),
       newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(),
       // Trava modelo e config: um token vazado nao vira chave livre.
+      //
+      // NAO passe `lockAdditionalFields` aqui. Com ele (inclusive `[]`), o
+      // @google/genai 2.23.0 deriva sozinho um `fieldMask` a partir do setup
+      // (getFieldMasks) descendo UM nivel em cada valor — inclusive em arrays.
+      // Como mandamos `tools`, sai o caminho `tools.0`, que nao existe em
+      // BidiGenerateContentSetup, e a API responde
+      // 400 "field_mask is invalid for BidiGenerateContentSetup".
+      // Omitindo o campo, nenhum field_mask e enviado e a API trava TODOS os
+      // campos que mandamos no setup — que e exatamente o que queremos aqui.
       liveConnectConstraints: { model: MODEL, config },
-      lockAdditionalFields: [],
     },
   })
 
