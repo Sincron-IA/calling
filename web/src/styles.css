@@ -797,3 +797,97 @@ body {
     animation-duration: 2.4s;
   }
 }
+
+/* ------------------------------------------------------------------------ */
+/* A janela principal do app de desktop                                      */
+/*                                                                          */
+/* No navegador a pagina ocupa a tela toda e a barra se ancora no canto da   */
+/* viewport. Na janela do app e ao contrario: a janela nao tem moldura e     */
+/* veste o TAMANHO DO CONTEUDO (o `DesktopGate` mede o `#root` e o Electron  */
+/* reancora no canto da tela). Por isso aqui nada pode depender de `100vh`   */
+/* nem da largura da janela — senao os dois encolheriam um ao outro.         */
+/*                                                                          */
+/* A classe entra no `body` em `main.tsx`, so nesta janela: o navegador e o  */
+/* painel da engrenagem seguem como estavam.                                 */
+/* ------------------------------------------------------------------------ */
+
+body.desktop-main {
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  /* A janela ja tem o tamanho do conteudo: nao ha o que rolar, e uma barra de
+     rolagem de 15px aqui comeria justamente o conteudo que ela viria mostrar. */
+  overflow: hidden;
+}
+
+/* A faixa de 8px em volta do conteudo e a unica alca da janela sem moldura —
+   sem ela nao haveria por onde arrastar. `flex: 0 0 auto` e o que impede a
+   janela e o conteudo de encolherem um ao outro sem parar. */
+body.desktop-main #root {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 8px;
+  -webkit-app-region: drag;
+}
+
+/* O conteudo continua clicavel: so a faixa arrasta. */
+body.desktop-main #root > * {
+  -webkit-app-region: no-drag;
+}
+
+/* A tela de conexao deixa de ser TELA: ela e a janela. */
+body.desktop-main .connect {
+  position: static;
+  padding: 0;
+  background: transparent;
+}
+
+/* Largura fixa de proposito: ela nao pode vir da janela, que vem dela. */
+body.desktop-main .connect__card {
+  width: 340px;
+}
+
+/* No cartao grande, 8px de faixa e pouca alca: o cabecalho tambem arrasta
+   (mesmo acordo do painel da engrenagem). */
+body.desktop-main .connect__head {
+  -webkit-app-region: drag;
+}
+
+/* A "mesa" (titulo, subtitulo e o fundo atras deles) era justamente a tela
+   sobrando atras do cartao. Na janela do app so ficam a barra e, quando ha, um
+   recado curto. */
+body.desktop-main .desk {
+  min-height: 0;
+  padding: 0;
+  gap: 8px;
+}
+
+body.desktop-main .desk__head {
+  display: none;
+}
+
+body.desktop-main .desk__log {
+  max-width: 260px;
+}
+
+body.desktop-main .desk__log:empty {
+  display: none;
+}
+
+/* Quem ancora a barra no canto da tela agora e a janela. */
+body.desktop-main .bar {
+  position: static;
+}
+
+/* Sem canto de tela dentro da janela, a engrenagem entra na linha, ao lado. */
+body.desktop-main .gear {
+  position: static;
+  flex: 0 0 auto;
+}
+
+/* Altura em `vh` nao serve numa janela que tem a altura do conteudo. */
+body.desktop-main .stack__list {
+  max-height: 420px;
+}

@@ -41,6 +41,33 @@ let quitting = false
 /** Se a bandeja existe. Sem ela, esconder a janela seria sumir com o app. */
 let trayReady = false
 
+/**
+ * Tamanho de partida da janela, valendo so ate a pagina dizer o dela. Nao e
+ * "o tamanho do app": e o minimo para a janela nao nascer enorme e preta atras
+ * do cartao enquanto o React ainda nem montou.
+ */
+const MAIN_START = { width: 360, height: 400 }
+
+/** Respiro entre a janela e o canto da area util. */
+const MAIN_GAP = 24
+
+/**
+ * O canto de BAIXO A DIREITA da janela principal, em coordenadas de tela.
+ *
+ * E este ponto que fica parado quando o conteudo muda de tamanho: a janela
+ * cresce para cima e para a esquerda, como um widget de bandeja, em vez de
+ * escorregar para fora da tela. Se o usuario arrastar a janela, o ponto vai
+ * junto — dai em diante ela cresce a partir de onde ele deixou.
+ */
+let mainAnchor = null
+
+/** Ultimo retangulo que NOS aplicamos: e como sabemos se o 'move' foi do usuario. */
+let mainApplied = null
+
+/** A janela so aparece depois que a pagina diz o tamanho dela (ou no estouro). */
+let mainRevealed = false
+let mainRevealTimer = null
+
 const MISSING_APP_PAGE =
   'data:text/html,' +
   encodeURIComponent(
@@ -69,25 +96,91 @@ async function resolveAppUrl() {
 }
 
 /** Canto de baixo a direita da area util: onde a barra do Calling mora. */
-function restingBounds(width, height) {
+function restingAnchor() {
   const { workArea } = screen.getPrimaryDisplay()
   return {
-    x: Math.round(workArea.x + workArea.width - width - 24),
-    y: Math.round(workArea.y + workArea.height - height - 24),
+    x: Math.round(workArea.x + workArea.width - MAIN_GAP),
+    y: Math.round(workArea.y + workArea.height - MAIN_GAP),
   }
 }
 
+/**
+ * O retangulo da janela para um tamanho de conteudo, mantendo a ancora (o canto
+ * de baixo a direita) no lugar e sem deixar nada sair da area util.
+ */
+function placeMain(width, height) {
+  if (!mainAnchor) mainAnchor = restingAnchor()
+  const display = screen.getDisplayNearestPoint(mainAnchor) || screen.getPrimaryDisplay()
+  const { workArea } = display
+
+  const w = Math.min(Math.max(1, Math.round(width)), workArea.width)
+  const h = Math.min(Math.max(1, Math.round(height)), workArea.height)
+  const x = Math.min(
+    Math.max(Math.round(mainAnchor.x) - w, workArea.x),
+    workArea.x + workArea.width - w,
+  )
+  const y = Math.min(
+    Math.max(Math.round(mainAnchor.y) - h, workArea.y),
+    workArea.y + workArea.height - h,
+  )
+
+  return { x: Math.round(x), y: Math.round(y), width: w, height: h }
+}
+
+function applyMainBounds(bounds) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainApplied = bounds
+  mainWindow.setBounds(bounds)
+}
+
+/** Mostra a janela na primeira vez — e so na primeira. */
+function revealMainWindow() {
+  if (mainRevealTimer) {
+    clearTimeout(mainRevealTimer)
+    mainRevealTimer = null
+  }
+  if (mainRevealed) return
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainRevealed = true
+  // Sem roubar o foco: o Calling e um app de canto, nao uma janela que se
+  // planta na frente de quem estava trabalhando.
+  mainWindow.showInactive()
+}
+
+/**
+ * A janela acompanha o TAMANHO DO CONTEUDO — a mesma ideia do painel da
+ * engrenagem, aqui para a janela principal. Sem isso a moldura sobraria em
+ * volta do cartao: fundo preto enorme atras de um cartaozinho.
+ *
+ * @param {{width:number, height:number}} size tamanho do conteudo, em px de pagina
+ */
+function resizeMainWindow(size) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+
+  const width = Math.max(96, Math.round(size?.width || 0))
+  const height = Math.max(48, Math.round(size?.height || 0))
+  const current = mainWindow.getBounds()
+
+  if (Math.abs(current.width - width) >= 2 || Math.abs(current.height - height) >= 2) {
+    applyMainBounds(placeMain(width, height))
+  }
+  revealMainWindow()
+}
+
 async function createWindow() {
-  const width = 480
-  const height = 760
+  const { width, height } = MAIN_START
 
   const win = new BrowserWindow({
-    width,
-    height,
-    ...restingBounds(width, height),
-    // Nasce escondida e sem roubar o foco: o Calling e um app de canto, nao
-    // uma janela que se planta na frente de quem estava trabalhando.
+    ...placeMain(width, height),
+    // Nasce escondida: so aparece quando a pagina ja disse o tamanho dela.
     show: false,
+    // Sem moldura do sistema. O Calling e um widget de canto, nao uma janela de
+    // app com titulo e botoes — quem mostra/esconde e encerra e a bandeja, e a
+    // faixa em volta do conteudo arrasta a janela (`-webkit-app-region: drag`).
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
     autoHideMenuBar: true,
     backgroundColor: '#0b0d10',
     title: 'Calling',
@@ -99,7 +192,32 @@ async function createWindow() {
     },
   })
   mainWindow = win
-  win.once('ready-to-show', () => win.showInactive())
+  mainRevealed = false
+  mainApplied = null
+
+  // Quem manda mostrar e a pagina, quando ela diz o tamanho do conteudo
+  // (`calling:resize-main`). O relogio aqui e so a rede de seguranca: se a
+  // pagina nao carregar (build faltando, erro), a janela aparece assim mesmo.
+  win.once('ready-to-show', () => {
+    mainRevealTimer = setTimeout(() => revealMainWindow(), 1500)
+  })
+
+  // Arrastou a janela: a ancora vai junto, senao o proximo redimensionamento a
+  // jogaria de volta para o canto.
+  win.on('move', () => {
+    if (win.isDestroyed()) return
+    const bounds = win.getBounds()
+    if (
+      mainApplied &&
+      bounds.x === mainApplied.x &&
+      bounds.y === mainApplied.y &&
+      bounds.width === mainApplied.width &&
+      bounds.height === mainApplied.height
+    ) {
+      return
+    }
+    mainAnchor = { x: bounds.x + bounds.width, y: bounds.y + bounds.height }
+  })
 
   // Voltar para a barra e o mesmo que sair do painel — menu que fica aberto
   // atras da janela nao e menu.
@@ -114,7 +232,14 @@ async function createWindow() {
   })
 
   win.on('closed', () => {
-    if (mainWindow === win) mainWindow = null
+    if (mainWindow !== win) return
+    mainWindow = null
+    mainApplied = null
+    mainRevealed = false
+    if (mainRevealTimer) {
+      clearTimeout(mainRevealTimer)
+      mainRevealTimer = null
+    }
   })
 
   // O microfone e o motivo do app existir: liberamos midia e negamos o resto.
@@ -146,6 +271,13 @@ function showMainWindow() {
     return
   }
   if (mainWindow.isMinimized()) mainWindow.restore()
+  // Pedido explicito (bandeja, "Abrir a barra"): a janela ja foi mostrada, e a
+  // primeira aparicao automatica nao precisa mais acontecer.
+  mainRevealed = true
+  if (mainRevealTimer) {
+    clearTimeout(mainRevealTimer)
+    mainRevealTimer = null
+  }
   mainWindow.show()
   mainWindow.focus()
 }
@@ -213,6 +345,14 @@ function registerIpc() {
   })
 
   ipcMain.handle('calling:resize-config', (_event, height) => resizeConfigPanel(height))
+
+  // A janela da barra faz o mesmo que o painel: veste o tamanho do conteudo.
+  ipcMain.handle('calling:resize-main', (event, size) => {
+    // So a propria janela principal manda nisso (o painel tem o handler dele).
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return
+    resizeMainWindow(size)
+  })
 
   ipcMain.handle('calling:close-config', () => closeConfigPanel())
 

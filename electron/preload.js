@@ -32,6 +32,13 @@ contextBridge.exposeInMainWorld('callingDesktop', {
   /** O painel diz a altura do seu conteudo; a janela acompanha. */
   resizeConfigPanel: (height) => ipcRenderer.invoke('calling:resize-config', height),
 
+  /**
+   * A barra diz o tamanho do seu conteudo; a janela principal acompanha e
+   * continua ancorada pelo canto de baixo a direita.
+   * @param size `{ width, height }` em px de pagina
+   */
+  resizeMainWindow: (size) => ipcRenderer.invoke('calling:resize-main', size),
+
   /** Fecha o painel (o proprio painel chama isto). */
   closeConfigPanel: () => ipcRenderer.invoke('calling:close-config'),
 

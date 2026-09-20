@@ -45,6 +45,12 @@ export interface CallingDesktopApi {
   openConfigPanel(anchor?: PanelAnchor | null): Promise<void>
   /** Ajusta a altura da janela do painel a do conteudo. */
   resizeConfigPanel(height: number): Promise<void>
+  /**
+   * Ajusta a janela da barra ao tamanho do conteudo. Sem isso a janela teria um
+   * tamanho fixo e sobraria fundo em volta do cartao — o oposto de um widget de
+   * canto. Quem reancora no canto de baixo a direita e o processo principal.
+   */
+  resizeMainWindow(size: { width: number; height: number }): Promise<void>
   /** Fecha o painel de configuracao (chamado de dentro dele). */
   closeConfigPanel(): Promise<void>
   /** Traz a janela da barra para frente. */
@@ -82,3 +88,13 @@ export const isDesktop = desktop !== null
  */
 export const isConfigPanel =
   typeof window !== 'undefined' && window.location.hash.startsWith('#config')
+
+/**
+ * Esta janela e a PRINCIPAL do app de desktop (a da barra / da primeira
+ * conexao)?
+ *
+ * Ela nao tem moldura e veste o tamanho do conteudo, entao o CSS de navegador
+ * (tela cheia, `100vh`, barra ancorada no canto da viewport) nao serve aqui —
+ * quem ancora e o Electron. E a classe `desktop-main` no `body` que troca isso.
+ */
+export const isDesktopMainWindow = isDesktop && !isConfigPanel

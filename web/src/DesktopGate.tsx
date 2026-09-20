@@ -85,6 +85,36 @@ export function DesktopGate() {
     }
   }, [api])
 
+  /* --------------------------------------------- a janela veste o conteudo */
+
+  /**
+   * A janela nao tem moldura nem tamanho proprio: ela e do tamanho do que esta
+   * dentro dela. O `#root` e quem sabe isso (no desktop ele encolhe ate o
+   * conteudo, ver `.desktop-main` no CSS) — aqui so contamos para o processo
+   * principal, que reancora a janela no canto.
+   *
+   * Um observador basta para tudo: a tela de conexao, a barra, o chip que
+   * cresce no hover e o cartao de chamada recebida passam todos por aqui.
+   */
+  useEffect(() => {
+    const root = document.getElementById('root')
+    if (!root) return
+
+    const report = () => {
+      const rect = root.getBoundingClientRect()
+      if (rect.width < 1 || rect.height < 1) return
+      void api.resizeMainWindow({
+        width: Math.ceil(rect.width),
+        height: Math.ceil(rect.height),
+      })
+    }
+
+    report()
+    const observer = new ResizeObserver(report)
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [api])
+
   /* ------------------------------------------------ conectar de verdade -- */
 
   const connect = useCallback(
