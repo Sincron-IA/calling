@@ -44,7 +44,13 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const startedAt = process.hrtime.bigint()
 
   res.on('finish', () => {
-    logEvent('info', 'http_request', {
+    // O watchdog bate em /health de minuto em minuto. No nivel normal isso
+    // afogaria justamente o que se quer achar depois, entao essa batida fica
+    // em `debug` — a um `CALLING_LOG_LEVEL=debug` de distancia quando o que
+    // estiver em duvida for o proprio watchdog.
+    const level = req.path === '/health' ? 'debug' : 'info'
+
+    logEvent(level, 'http_request', {
       method: req.method,
       path: req.path,
       status: res.statusCode,

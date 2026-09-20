@@ -94,7 +94,7 @@ function buildLogger(): pino.Logger {
 
 const logger = buildLogger()
 
-export type LogLevel = 'info' | 'warn' | 'error'
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 /**
  * Registra um evento nos DOIS lugares que importam:
@@ -116,8 +116,8 @@ export function logEvent(
 
   if (!human) return
   const line = `[calling] ${human}`
-  if (level === 'info') console.log(line)
-  else console.error(line)
+  if (level === 'warn' || level === 'error') console.error(line)
+  else console.log(line)
 }
 
 /** Onde o log esta sendo escrito — o bridge anuncia isso ao subir. */
