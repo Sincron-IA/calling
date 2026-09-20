@@ -1,18 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GeminiLiveOrbAdapter } from 'orb-ui/adapters'
 import { fetchAgents, endCall as endCallOnBridge, type AgentSummary } from './bridge'
 import { createCallAdapter } from './gemini'
-import { AgentAvatar, agentColor, type AvatarStatus } from './AgentAvatar'
-
-type Phase = 'idle' | 'calling' | 'in-call'
+import { agentColor, pickPreferredAgent, registerCall } from './agents'
+import { CallingBar, type CallPhase } from './CallingBar'
+import {
+  approveIncoming,
+  declineIncoming,
+  dismissIncoming,
+  subscribeIncomingCalls,
+  type DeclineCause,
+  type IncomingCall,
+} from './incoming'
 
 export function App() {
   const [agents, setAgents] = useState<AgentSummary[]>([])
-  // Quem esta no centro da tela: o ultimo agente com quem se falou (ou o primeiro
-  // da lista). Uma ligacao por vez — o bridge so aguenta uma sessao de voz.
-  const [focused, setFocused] = useState<string>('')
-  const [phase, setPhase] = useState<Phase>('idle')
-  const [adapter, setAdapter] = useState<GeminiLiveOrbAdapter | null>(null)
+  // Quem esta no chip: o ultimo agente com quem se falou. Uma ligacao por vez —
+  // o bridge so aguenta uma sessao de voz.
+  const [current, setCurrent] = useState<string>('')
+  const [phase, setPhase] = useState<CallPhase>('idle')
+  const [callStartedAt, setCallStartedAt] = useState<number | null>(null)
+  const [incoming, setIncoming] = useState<IncomingCall[]>([])
   const [lastReply, setLastReply] = useState('')
   const [waiting, setWaiting] = useState(false)
   const [error, setError] = useState('')
@@ -27,12 +35,16 @@ export function App() {
     fetchAgents()
       .then((list) => {
         setAgents(list)
-        setFocused((current) => current || list[0]?.slug || '')
+        setCurrent((slug) => slug || pickPreferredAgent(list))
       })
       .catch((err: Error) =>
         setError(`Nao consegui falar com o bridge: ${err.message}`),
       )
   }, [])
+
+  // Chamadas recebidas (um agente ligando para o Luiz). A fonte ainda e a casca
+  // em `incoming.ts` — o bridge nao tem esse canal.
+  useEffect(() => subscribeIncomingCalls(setIncoming), [])
 
   const hangUp = useCallback(async () => {
     attemptRef.current += 1
@@ -41,8 +53,8 @@ export function App() {
     if (live) await live.stop().catch(() => undefined)
     if (callIdRef.current) endCallOnBridge(callIdRef.current)
     callIdRef.current = ''
-    setAdapter(null)
     setPhase('idle')
+    setCallStartedAt(null)
     setWaiting(false)
   }, [])
 
@@ -52,8 +64,10 @@ export function App() {
 
     setError('')
     setLastReply('')
-    setFocused(slug)
+    setCurrent(slug)
     setPhase('calling')
+    setCallStartedAt(null)
+    registerCall(slug)
 
     const callId = crypto.randomUUID()
     callIdRef.current = callId
@@ -73,32 +87,27 @@ export function App() {
         return
       }
       adapterRef.current = next
-      setAdapter(next)
       setPhase('in-call')
+      setCallStartedAt(Date.now())
     } catch (err) {
       if (!isCurrent()) return
       setError(err instanceof Error ? err.message : 'Nao consegui completar a ligacao.')
       setPhase('idle')
+      setCallStartedAt(null)
       callIdRef.current = ''
     }
   }, [])
 
   /**
-   * Clicar num avatar e a interacao principal: atende/liga, cancela ou desliga.
-   * Clicar em OUTRO agente no meio de uma ligacao encerra a atual antes de abrir
-   * a nova — nunca ficam duas de pe.
+   * Ligar para alguem: se ja houver ligacao de pe, ela cai antes — nunca ficam
+   * duas sessoes vivas.
    */
-  const onAvatarClick = useCallback(
+  const call = useCallback(
     async (slug: string) => {
-      const busy = phase !== 'idle'
-      if (busy && slug === focused) {
-        await hangUp()
-        return
-      }
-      if (busy) await hangUp()
+      if (phase !== 'idle') await hangUp()
       await startCall(slug)
     },
-    [phase, focused, hangUp, startCall],
+    [phase, hangUp, startCall],
   )
 
   // Se a aba fechar no meio da ligacao, avisa o bridge para soltar a sessao.
@@ -110,73 +119,75 @@ export function App() {
     return () => window.removeEventListener('pagehide', onUnload)
   }, [])
 
-  const activeAgent = agents.find((a) => a.slug === focused)
-  const inCall = phase === 'in-call'
+  /* ------------------------------------------ chamadas recebidas ---------- */
 
-  const statusOf = (slug: string): AvatarStatus => {
-    if (slug !== focused || phase === 'idle') return 'idle'
-    return phase === 'in-call' ? 'in-call' : 'ringing'
-  }
-  const colorOf = (slug: string) => agentColor(agents.findIndex((a) => a.slug === slug))
-  const queue = agents.filter((a) => a.slug !== focused)
+  /** Resolve o item na hora, sem abrir voz nenhuma. */
+  const onApprove = useCallback((incomingCall: IncomingCall) => {
+    approveIncoming(incomingCall)
+    dismissIncoming(incomingCall.id)
+  }, [])
+
+  /** Atender: e uma ligacao normal com o agente que chamou. */
+  const onAnswer = useCallback(
+    (incomingCall: IncomingCall) => {
+      dismissIncoming(incomingCall.id)
+      void call(incomingCall.agentSlug)
+    },
+    [call],
+  )
+
+  /**
+   * Recusar (no dedo ou por tempo esgotado). Quem trata isso do outro lado e
+   * responsavel por mandar a mesma `reason` no Telegram — o front nao manda
+   * mensagem nenhuma.
+   */
+  const onDecline = useCallback((incomingCall: IncomingCall, cause: DeclineCause) => {
+    declineIncoming(incomingCall, cause)
+    dismissIncoming(incomingCall.id)
+  }, [])
+
+  const colorOf = useCallback(
+    (slug: string) => agentColor(agents.findIndex((a) => a.slug === slug)),
+    [agents],
+  )
+
+  const currentName = useMemo(
+    () => agents.find((a) => a.slug === current)?.name ?? '',
+    [agents, current],
+  )
 
   return (
-    <main className="app">
-      <header className="app__header">
-        <h1 className="app__title">Calling</h1>
-        <p className="app__subtitle">Fale com os agentes da Sincron</p>
+    <main className="desk">
+      <header className="desk__head">
+        <h1 className="desk__title">Calling</h1>
+        <p className="desk__subtitle">
+          Os agentes da Sincron ficam a um toque — e ligam de volta quando trava.
+        </p>
       </header>
 
-      <section className="stage">
-        {agents.length === 0 && !error && <p className="muted">Carregando agentes…</p>}
-
-        {activeAgent && (
-          <AgentAvatar
-            agent={activeAgent}
-            color={colorOf(activeAgent.slug)}
-            status={statusOf(activeAgent.slug)}
-            variant="main"
-            adapter={adapter ?? undefined}
-            waiting={waiting}
-            onClick={() => void onAvatarClick(activeAgent.slug)}
-          />
+      {/* O trabalho acontece em silencio: a barra e a unica coisa que fala. */}
+      <section className="desk__log" aria-live="polite">
+        {agents.length === 0 && !error && <p className="desk__note">Carregando agentes…</p>}
+        {phase === 'in-call' && waiting && (
+          <p className="desk__note">{currentName} está pensando…</p>
         )}
-
-        <p className="stage__status">
-          {phase === 'idle' && activeAgent && `Toque no avatar para ligar para ${activeAgent.name}`}
-          {phase === 'calling' && `Chamando ${activeAgent?.name}…`}
-          {inCall && !waiting && `Na linha com ${activeAgent?.name}`}
-          {inCall && waiting && `${activeAgent?.name} está pensando…`}
-        </p>
-
-        {lastReply && <blockquote className="reply">{lastReply}</blockquote>}
-        {error && <p className="error">{error}</p>}
+        {lastReply && <blockquote className="desk__reply">{lastReply}</blockquote>}
+        {error && <p className="desk__error">{error}</p>}
       </section>
 
-      {queue.length > 0 && (
-        <section className="queue" aria-label="Outros agentes">
-          {queue.map((agent) => (
-            <AgentAvatar
-              key={agent.slug}
-              agent={agent}
-              color={colorOf(agent.slug)}
-              status="idle"
-              variant="queued"
-              onClick={() => void onAvatarClick(agent.slug)}
-            />
-          ))}
-        </section>
-      )}
-
-      <footer className="actions">
-        {phase === 'idle' ? (
-          <p className="hint">Uma ligacao por vez: tocar em outro avatar troca de agente.</p>
-        ) : (
-          <button type="button" className="btn btn--hangup" onClick={() => void hangUp()}>
-            {inCall ? 'Desligar' : 'Cancelar'}
-          </button>
-        )}
-      </footer>
+      <CallingBar
+        agents={agents}
+        colorOf={colorOf}
+        currentSlug={current}
+        phase={phase}
+        callStartedAt={callStartedAt}
+        incoming={incoming}
+        onCall={(slug) => void call(slug)}
+        onHangUp={() => void hangUp()}
+        onApprove={onApprove}
+        onAnswer={onAnswer}
+        onDecline={onDecline}
+      />
     </main>
   )
 }

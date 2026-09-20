@@ -54,8 +54,11 @@ turno anterior valida a continuidade da sessão.
 
 - Login/logout: não se aplica
 - Permissões: chamada sem `Authorization` deve dar 401
-- Fluxo principal: tocar no avatar → chamando → falar → ouvir → tocar de novo (ou Desligar)
-- Troca de agente: tocar num avatar da fila durante a ligacao encerra a atual e abre a nova
+- Fluxo principal: hover na barrinha → tocar no avatar → falar → ouvir → tocar de novo (desliga)
+- Troca de agente: chevron → escolher outro na lista encerra a ligacao atual e abre a nova
+- Chamada recebida (ainda sem bridge): em dev, `__calling.ring('ivo', 'motivo')` no console
+  deve virar cartao pulsando; `Aprovar`, atender e recusar limpam o cartao (hoje os
+  callbacks so logam `console.warn` — veja os TODO de `web/src/incoming.ts`)
 - Fluxo administrativo: não se aplica
 - Erro esperado: bridge fora do ar → o app mostra o erro e não trava
 - Upload/anexos: não se aplica

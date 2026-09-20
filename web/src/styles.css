@@ -1,8 +1,12 @@
 :root {
   --bg: #0b0d10;
   --surface: #14181d;
+  --surface-soft: rgba(20, 24, 29, 0.6);
+  --surface-hover: rgba(20, 24, 29, 0.72);
+  --surface-strong: rgba(20, 24, 29, 0.92);
   --border: #242b33;
   --text: #e9edf2;
+  --text-2: #c7cdd6;
   --muted: #8b95a3;
   --accent: #4ade80;
   --danger: #f87171;
@@ -22,299 +26,508 @@ body {
   min-height: 100vh;
 }
 
-.app {
+/* A "mesa": o app e quieto: quem fala e a barra no canto. */
+.desk {
   min-height: 100vh;
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 32px 16px 40px;
+  padding: 32px 20px 120px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 28px;
+  gap: 24px;
 }
 
-.app__header {
-  text-align: center;
+.desk__head {
+  max-width: 640px;
 }
 
-.app__title {
+.desk__title {
   margin: 0;
-  font-size: 2rem;
+  font-size: 1.25rem;
   letter-spacing: -0.02em;
 }
 
-.app__subtitle {
+.desk__subtitle {
   margin: 6px 0 0;
   color: var(--muted);
+  font-size: 0.85rem;
 }
 
-/* Avatar de agente: o clique nele e que liga, atende e desliga. */
-.avatar {
+.desk__log {
+  max-width: 640px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
-.avatar__stage {
-  position: relative;
-  display: block;
-  width: var(--avatar-size);
-  height: var(--avatar-size);
+.desk__note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
-.avatar__disc {
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
+.desk__reply {
+  margin: 0;
+  padding: 12px 16px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface);
+  border-radius: 0 10px 10px 0;
+  line-height: 1.55;
+  font-size: 0.9rem;
+  color: var(--text-2);
+}
+
+.desk__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+/* ------------------------------------------------------------------ barra -- */
+
+/* Ancorada no canto de baixo a direita; cresce para cima. */
+.bar {
+  position: fixed;
+  right: 24px;
+  bottom: 28px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* Disco de agente: inicial + borda na cor dele. */
+.disc {
+  width: var(--disc-size);
+  height: var(--disc-size);
+  flex: 0 0 auto;
   border-radius: 50%;
-  border: 1px solid var(--border);
+  border: 1px solid var(--disc-color);
+  color: var(--disc-color);
   background: radial-gradient(circle at 50% 38%, #1b2128, var(--surface) 70%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--disc-size) * 0.42);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+/* ---- Chip parado / na linha ---------------------------------------------- */
+
+.chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background 0.22s ease, border-color 0.22s ease;
+}
+
+.chip.is-active {
+  background: var(--surface-soft);
+}
+
+.chip.is-open,
+.chip:focus-within {
+  background: var(--surface-hover);
+  border-color: var(--border);
+  backdrop-filter: blur(6px);
+}
+
+/* Tres barrinhas: mudas quando parado, vivas na ligacao. */
+.wave {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
+}
+
+.wave i {
+  width: 3px;
+  border-radius: 999px;
+  background: var(--muted);
+  opacity: 0.55;
+}
+
+.wave i:nth-child(1) {
+  height: 7px;
+}
+
+.wave i:nth-child(2) {
+  height: 13px;
+}
+
+.wave i:nth-child(3) {
+  height: 9px;
+}
+
+.wave--live i {
+  background: var(--accent);
+  opacity: 0.9;
+  animation: wave1 0.8s ease-in-out infinite;
+}
+
+.wave--live i:nth-child(2) {
+  animation-name: wave2;
+  animation-delay: 0.15s;
+}
+
+.wave--live i:nth-child(3) {
+  animation-name: wave3;
+  animation-delay: 0.3s;
+}
+
+@keyframes wave1 {
+  0%,
+  100% {
+    height: 6px;
+  }
+  50% {
+    height: 15px;
+  }
+}
+
+@keyframes wave2 {
+  0%,
+  100% {
+    height: 10px;
+  }
+  50% {
+    height: 18px;
+  }
+}
+
+@keyframes wave3 {
+  0%,
+  100% {
+    height: 5px;
+  }
+  50% {
+    height: 12px;
+  }
+}
+
+/* O avatar e o chevron so aparecem no hover/foco. */
+.chip__reveal {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: width 0.24s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.2s ease,
+    margin-left 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.chip.is-open .chip__reveal,
+.chip:focus-within .chip__reveal {
+  width: 34px;
+  margin-left: 9px;
+  opacity: 1;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.chip__avatar {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+}
+
+.chip__avatar:hover {
+  transform: scale(1.06);
+}
+
+.chip__chevron {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--bg);
+  background: var(--border);
+  color: var(--text-2);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1), border-color 0.45s ease,
-    box-shadow 0.6s ease;
+  cursor: pointer;
 }
 
-.avatar:hover .avatar__disc:not(:disabled) {
-  transform: scale(1.04);
-  border-color: var(--avatar-color);
-}
-
-.avatar__disc:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.avatar__disc:focus-visible {
-  outline: none;
-  border-color: var(--avatar-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--avatar-color) 35%, transparent);
-}
-
-.avatar__halo {
-  position: absolute;
-  inset: -8px;
-  border-radius: 50%;
-  border: 1px solid var(--avatar-color);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.6s ease;
-}
-
-.avatar__mono {
-  font-size: calc(var(--avatar-size) * 0.36);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--avatar-color);
-  opacity: 0.85;
-  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-.avatar__orb {
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-.avatar__name {
-  font-size: 0.85rem;
-  color: var(--muted);
-  transition: color 0.4s ease, opacity 0.35s ease;
-}
-
-.avatar--main .avatar__name {
-  font-size: 1.05rem;
+.chip__chevron:hover {
+  background: #2d3640;
   color: var(--text);
 }
 
-/* Chamando: respiracao lenta, sem susto. */
-.avatar.is-ringing .avatar__halo {
-  animation: avatar-breathe 3.2s ease-in-out infinite;
-}
-
-.avatar.is-ringing .avatar__disc {
-  border-color: color-mix(in srgb, var(--avatar-color) 45%, var(--border));
-}
-
-/* Na linha: brilho estavel; quem se mexe sao as barras do orb. */
-.avatar.is-live .avatar__halo {
-  opacity: 0.5;
-  box-shadow: 0 0 28px -8px var(--avatar-color);
-}
-
-.avatar.is-live .avatar__disc {
-  border-color: var(--avatar-color);
-}
-
-.avatar.is-ringing .avatar__mono,
-.avatar.is-live .avatar__mono {
-  opacity: 0.14;
-  transform: scale(0.82);
-}
-
-@keyframes avatar-breathe {
-  0%,
-  100% {
-    opacity: 0.16;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.62;
-    transform: scale(1.045);
-  }
-}
-
-/* A fila dos outros agentes: empilhados, abrem em leque no hover/foco. */
-.queue {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding-left: 16px;
-}
-
-.queue .avatar {
-  margin-left: -16px;
-  transition: margin-left 0.45s cubic-bezier(0.22, 0.61, 0.36, 1),
-    transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-.queue:hover .avatar,
-.queue:focus-within .avatar {
-  margin-left: 10px;
-}
-
-/* Empilhados, os nomes nao ocupam largura — senao os discos nao se sobrepoem. */
-.queue .avatar__name {
-  opacity: 0;
-  width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.chip__label {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 8px;
   white-space: nowrap;
-  text-align: center;
-  transition: opacity 0.35s ease, width 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
+  font-size: 0.68rem;
+  color: var(--muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
 }
 
-.queue:hover .avatar__name,
-.queue:focus-within .avatar__name {
+.chip.is-open .chip__label,
+.chip:focus-within .chip__label {
   opacity: 1;
-  width: calc(var(--avatar-size) + 12px);
 }
 
-.queue .avatar:hover {
-  transform: translateY(-4px);
-}
-
-/* Sem hover (celular): a fila ja nasce aberta e com os nomes a mostra. */
-@media (hover: none) {
-  .queue {
-    flex-wrap: wrap;
-    gap: 14px;
-    padding-left: 0;
-  }
-
-  .queue .avatar {
-    margin-left: 0;
-  }
-
-  .queue .avatar__name {
-    opacity: 1;
-    width: calc(var(--avatar-size) + 12px);
-  }
-}
-
-.stage {
+/* Menu dos outros agentes, aberto pelo chevron. */
+.menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  width: 150px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.9);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 18px;
-  text-align: center;
-  flex: 1;
-  justify-content: center;
+  gap: 2px;
 }
 
-.stage__status {
-  margin: 0;
-  color: var(--muted);
-  min-height: 1.4em;
-}
-
-.reply {
-  margin: 0;
-  padding: 14px 18px;
-  border-left: 3px solid var(--accent);
-  background: var(--surface);
-  border-radius: 0 10px 10px 0;
-  text-align: left;
-  line-height: 1.55;
-  max-width: 100%;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-.error {
-  margin: 0;
-  color: var(--danger);
-  font-size: 0.9rem;
-}
-
-.actions {
-  width: 100%;
+.menu__row {
   display: flex;
-  justify-content: center;
-  min-height: 52px;
   align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
 }
 
-.hint {
+.menu__row:hover {
+  background: #1b2128;
+}
+
+.menu__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+/* ---- Chamada recebida ---------------------------------------------------- */
+
+.incoming {
+  min-width: 210px;
+  max-width: 280px;
+  padding: 11px 13px;
+  border-radius: 14px;
+  background: var(--surface-strong);
+  border: 1px solid color-mix(in srgb, var(--ring) 40%, var(--border));
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  animation: ring-glow 2.2s ease-in-out infinite;
+}
+
+.incoming--inline {
+  animation: none;
+  width: 100%;
+}
+
+@keyframes ring-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent, 0 14px 34px -20px rgba(0, 0, 0, 0.9);
+  }
+  50% {
+    box-shadow: 0 0 24px -2px color-mix(in srgb, var(--ring) 22%, transparent),
+      0 14px 34px -20px rgba(0, 0, 0, 0.9);
+  }
+}
+
+.incoming__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.incoming__name {
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.incoming__reason {
   margin: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
-  text-align: center;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-2);
 }
 
-.btn {
-  padding: 14px 44px;
+.incoming__actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 0;
   border-radius: 999px;
-  border: none;
-  font-size: 1.05rem;
+  font: inherit;
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.pill:hover {
+  filter: brightness(1.08);
+}
+
+.pill--approve {
+  background: var(--accent);
   color: #0b0d10;
-  transition: filter 0.15s;
 }
 
-.btn:hover:not(:disabled) {
-  filter: brightness(1.1);
+.round {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.round:hover {
+  background: #2d3640;
+  color: var(--text);
 }
 
-.btn--hangup {
-  background: var(--danger);
+/* ---- Varias chamadas ao mesmo tempo -------------------------------------- */
+
+.stack {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px 6px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  backdrop-filter: blur(8px);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+  animation: ring-glow 2.2s ease-in-out infinite;
+  /* Sem um agente unico, o brilho da pilha usa o verde da casa. */
+  --ring: #4ade80;
+}
+
+.stack__discs {
+  display: flex;
+  align-items: center;
+  padding-right: 10px;
+}
+
+.stack__disc {
+  position: relative;
+  margin-right: -10px;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+.stack__label {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.stack__list {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 280px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.9);
+}
+
+/* ---- Foco visivel -------------------------------------------------------- */
+
+.chip__avatar:focus-visible,
+.chip__chevron:focus-visible,
+.menu__row:focus-visible,
+.pill:focus-visible,
+.round:focus-visible,
+.stack:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Sem hover (celular): o chip ja nasce aberto, senao nao da para tocar nele. */
+@media (hover: none) {
+  .chip {
+    background: var(--surface-hover);
+    border-color: var(--border);
+  }
+
+  .chip__reveal {
+    width: 34px;
+    margin-left: 9px;
+    opacity: 1;
+    overflow: visible;
+    pointer-events: auto;
+  }
+
+  .chip__label {
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .avatar__disc,
-  .avatar__mono,
-  .avatar__name,
-  .queue .avatar,
-  .queue .avatar__name {
+  .chip,
+  .chip__reveal,
+  .chip__avatar,
+  .chip__label {
     transition: none;
   }
 
-  .avatar.is-ringing .avatar__halo {
+  .wave--live i {
     animation: none;
-    opacity: 0.4;
+  }
+
+  .incoming,
+  .stack {
+    animation: none;
+    box-shadow: 0 0 20px -6px color-mix(in srgb, var(--ring) 25%, transparent);
   }
 }
