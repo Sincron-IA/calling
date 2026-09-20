@@ -220,3 +220,54 @@ Registre decisões técnicas, exceções e motivos.
   testar** — esta VPS não tem gerenciador de janelas. O aro claro em volta da
   janela nos screenshots é artefato do Xvfb sem compositor, não borda do app.
 - Revisar em: no primeiro uso com mouse de verdade, para confirmar o arrasto.
+
+## 2026-09-20 - `frame: false` não deixa a janela transparente — e um teste com fundo preto escondeu isso
+
+- Contexto: depois de tirar a moldura e vestir a janela no conteúdo (commit
+  `c4f4714`), o dono abriu de novo e viu o que a correção deveria ter resolvido:
+  um retângulo preto sólido em volta da barra flutuante e do cartão de
+  configuração, com uma espécie de borda/glow claro por fora. "Fundo horroroso",
+  nas palavras dele.
+- Causa: `frame: false` tira só a moldura do sistema operacional; a janela
+  continua um retângulo OPACO, preenchido com o `backgroundColor` configurado
+  (`#0b0d10` no `main.js`, `#14181d` no `config-panel.js`). Como o cartão e a
+  barra têm canto arredondado, sobrava fundo escuro nos cantos e nas bordas. O
+  "glow" claro não era borda do app: é a sombra que o próprio SO desenha em
+  volta de janela sem moldura.
+- Decisão (commit `47f4e3a`): as duas janelas sem moldura nascem
+  `transparent: true`, com `backgroundColor: '#00000000'` e `hasShadow: false`.
+  Do lado da página, `main.tsx` marca `<html>`/`<body>` com `desktop-window` e
+  `desktop-panel`, e o `styles.css` zera o fundo de `html`, `body` e `#root` só
+  nessas janelas — os três precisam estar lá, porque basta UM deles pintar para
+  o retângulo voltar inteiro. Nenhuma cor de cartão, barra ou painel foi tocada.
+- A lição de verdade, sobre o teste que escondeu o bug: o `c4f4714` tinha sido
+  "validado" em Xvfb com fundo de tela PRETO. Um retângulo opaco escuro é
+  invisível contra fundo preto — o teste passou justamente porque não podia
+  falhar. Desta vez o harness sobe o `electron/main.js` de verdade (não
+  mockado), num Xvfb com compositor (`xcompmgr`), sobre um papel de parede
+  XADREZ magenta/ciano, de propósito. Rodou antes/depois (revertendo os quatro
+  arquivos para o HEAD anterior para gerar o "antes") em três estados: tela de
+  conexão, barra conectada (repouso e hover) e painel da engrenagem aberto. No
+  "antes" o retângulo preto aparece nítido nos três; no "depois" some.
+  `npm run typecheck`, `npm run build` e `npm run build:server` passam. Regra
+  que fica: teste de aparência com fundo escuro não prova nada sobre fundo.
+- Alternativas: (a) arredondar/recortar a janela pelo SO — não existe API
+  portátil no Electron para isso; (b) manter `hasShadow: true` para preservar a
+  profundidade — rejeitada, a sombra do SO é desenhada no RETÂNGULO da janela e
+  era exatamente a borda clara reclamada; (c) pintar um fundo escuro na página
+  com cantos arredondados — mesmo problema, o retângulo continua onde o
+  arredondamento não cobre.
+- Impacto — as limitações honestas: (1) só foi validado em Linux/X11
+  (Xvfb + `xcompmgr`); **não foi testado em Windows nem macOS**, que é onde o
+  dono usa de verdade. Lá o compositor é sempre ativo, então a expectativa é que
+  funcione, mas não há prova. (2) Efeito colateral aceito de propósito: o chip
+  da barra usa `--surface-soft`/`--surface-hover`, que são `rgba(...)`
+  semi-transparentes — agora eles compõem com o papel de parede real em vez do
+  fundo opaco da janela, então em tela de fundo claro o chip fica cinza-médio em
+  vez de quase preto. Continua legível, e é o efeito "vidro" que o CSS já
+  sugeria com `backdrop-filter`. (3) O painel da engrenagem perdeu toda a sombra
+  própria: a do SO some junto com `hasShadow: false` e não dá para compensar no
+  CSS, porque a janela do painel tem exatamente o tamanho do cartão — a sombra
+  seria cortada.
+- Revisar em: no primeiro teste em Windows ou macOS de verdade. Se o retângulo
+  ou a sombra voltarem lá, o problema é de plataforma, não deste commit.
