@@ -79,13 +79,14 @@ export function buildEcho(text: string): string {
 }
 
 /**
- * Manda o eco. Nao lanca: o pior caso e uma linha no log.
+ * Manda o eco. Nao lanca: o pior caso e uma linha no log. Devolve se o eco
+ * chegou na thread — o app mostra isso como "na thread" no balao.
  *
  * Agente sem credencial configurada simplesmente nao ecoa — e o recado dele
  * segue normalmente para a sessao. Isso e o que permite ligar o Telegram de um
  * agente por vez, sem parar os outros.
  */
-export async function echoToThread(agentSlug: string, text: string): Promise<void> {
+export async function echoToThread(agentSlug: string, text: string): Promise<boolean> {
   const token = tokenFor(agentSlug)
   const chatId = chatFor(agentSlug)
 
@@ -96,7 +97,7 @@ export async function echoToThread(agentSlug: string, text: string): Promise<voi
       { agent: agentSlug, hasToken: Boolean(token), hasChat: Boolean(chatId) },
       `${agentSlug} nao tem Telegram configurado; eco pulado`,
     )
-    return
+    return false
   }
 
   const controller = new AbortController()
@@ -124,11 +125,12 @@ export async function echoToThread(agentSlug: string, text: string): Promise<voi
         { agent: agentSlug, status: res.status },
         `Telegram recusou o eco de ${agentSlug} (${res.status})`,
       )
-      return
+      return false
     }
 
     // O TEXTO do pedido nao entra no log — so que o eco saiu.
     logEvent('info', 'telegram_echoed', { agent: agentSlug }, `eco de ${agentSlug} na thread`)
+    return true
   } catch (err) {
     logEvent(
       'warn',
@@ -136,6 +138,7 @@ export async function echoToThread(agentSlug: string, text: string): Promise<voi
       { agent: agentSlug, error: (err as Error).name },
       `nao consegui ecoar para ${agentSlug}: ${(err as Error).name}`,
     )
+    return false
   } finally {
     clearTimeout(timer)
   }

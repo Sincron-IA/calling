@@ -1,6 +1,6 @@
 # US-001 — A janela cresce junto com o que abre por cima da barra
 
-**Status:** pending
+**Status:** implemented — aguardando smoke no app de desktop com o bridge (ver .sincron-auto/report.md)
 **Parent plan:** docs/exec-plans/plans/plan-001-barra-conversa.md
 **Created:** 2026-09-20
 **Updated:** 2026-09-20

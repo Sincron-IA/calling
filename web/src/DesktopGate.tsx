@@ -278,8 +278,8 @@ export function DesktopGate() {
  */
 function readyMessage(count: number): string {
   if (count === 0) return 'Conectado, mas nenhum agente disponível.'
-  if (count === 1) return 'Pronto. 1 agente na linha.'
-  return `Pronto. ${count} agentes na linha.`
+  // O numero vai no pe do recado, junto dos discos de quem esta na linha.
+  return 'Conectado · pronto para conversar'
 }
 
 function GearIcon() {

@@ -473,3 +473,25 @@ Registre decisões técnicas, exceções e motivos.
   O `Conectar de novo` existe de propósito: sem ele, quem chegasse pela mensagem
   de erro do recado encontraria um painel sem saída.
 - Revisar em: se o painel ganhar mais estados que "conectado / não conectado".
+
+## 2026-09-20 - A barra veste o visual aprovado no canvas
+
+- Contexto: o comportamento do plan-001 já estava no ar (`be32aca`), mas com o
+  visual provisório. O dono aprovou um canvas de design
+  (https://claude.ai/artifact/9VB6QEft8qQktnoRYXaGAD) como referência.
+- Decisão: Geist + Geist Mono empacotadas via `@fontsource` (a janela do
+  desktop não pode depender de rede para desenhar a letra); coluna de 272 px;
+  a cor do AGENTE é a única cor forte (enviar, pensando, balão, filete); tudo o
+  que some sozinho mostra um filete de tempo, que é animação CSS pausada junto
+  com o relógio do JS no hover; o disco na lista vira o botão de aparência, com
+  o lápis só no hover — a linha fica com duas ações, escrever e ligar.
+- Eco visível: `/api/message` passa a responder `echoed`, e o balão diz
+  "na thread" quando o recado chegou no Telegram. O eco continua correndo em
+  paralelo com o agente; esperamos por ele só no fim, e ele tem teto próprio.
+- Agente que muda a si mesmo vira recado "antes → depois". Gravação feita pelo
+  próprio painel não vira recado: o início do salvar é marcado e o SSE dos 4 s
+  seguintes é tratado como eco nosso.
+- Alternativas: carregar Geist do Google Fonts — rejeitada, o app abre sem rede
+  e piscaria a letra; manter o lápis como terceiro botão na linha — rejeitada,
+  três ícones iguais por linha competem com as duas ações principais.
+- Revisar em: após o smoke do plan-001 no Electron.

@@ -12,6 +12,7 @@ import { createCallAdapter } from './gemini'
 import { agentColor, pickPreferredAgent, registerCall } from './agents'
 import {
   CallingBar,
+  type AgentChange,
   type CallPhase,
   type ComposeState,
   type ReplyBubble,
@@ -26,6 +27,34 @@ import {
   type DeclineCause,
   type IncomingCall,
 } from './incoming'
+
+/** Quanto tempo depois de salvar por aqui o SSE ainda e "eco nosso". */
+const OWN_SAVE_WINDOW_MS = 4000
+
+/**
+ * O que mudou na cara de um agente entre duas listas do bridge. Um recado so,
+ * do primeiro agente que mudou — mais de um ao mesmo tempo e raro, e a lista
+ * ja mostra todos.
+ */
+function describeChange(before: AgentSummary[], after: AgentSummary[]): AgentChange | null {
+  for (const next of after) {
+    const index = before.findIndex((a) => a.slug === next.slug)
+    if (index < 0) continue
+    const prev = before[index]
+    const changed: string[] = []
+    if (prev.name !== next.name) changed.push('trocou de nome')
+    if ((prev.color ?? '') !== (next.color ?? '')) changed.push('trocou de cor')
+    if ((prev.avatarVersion ?? 0) !== (next.avatarVersion ?? 0)) changed.push('trocou a imagem')
+    if (changed.length === 0) continue
+    return {
+      slug: next.slug,
+      what: changed.length === 1 ? changed[0] : 'mudou a aparência',
+      beforeName: prev.name,
+      beforeColor: prev.color || agentColor(index),
+    }
+  }
+  return null
+}
 
 export interface AppProps {
   /**
@@ -55,6 +84,13 @@ export function App({ readyNotice = '' }: AppProps) {
     busy: false,
   })
   const [reply, setReply] = useState<ReplyBubble | null>(null)
+  // Um agente mudou a si mesmo pela VPS: o antes -> depois acima da barra.
+  const [change, setChange] = useState<AgentChange | null>(null)
+  // A lista que a tela mostra agora, para comparar com a que o SSE anuncia.
+  const agentsRef = useRef<AgentSummary[]>([])
+  // Quando o painel daqui salvou pela ultima vez: o SSE dessa gravacao nao e
+  // "o agente mudou sozinho", e nao vira recado.
+  const ownSaveAtRef = useRef(0)
   // Imagem de cada agente, ja baixada e virada em URL local. Vazio = ele nao
   // tem imagem, e o disco fica com a inicial.
   const [avatars, setAvatars] = useState<Record<string, string>>({})
@@ -136,6 +172,21 @@ export function App({ readyNotice = '' }: AppProps) {
   // SSE. A fila da tela e sempre a que o servidor manda.
   useEffect(() => subscribeIncomingCalls(setIncoming), [])
 
+  useEffect(() => {
+    agentsRef.current = agents
+  }, [agents])
+
+  // Marcado no COMECO da gravacao: o aviso do SSE pode chegar antes da
+  // resposta do proprio PUT.
+  const onAgentsSaving = useCallback(() => {
+    ownSaveAtRef.current = Date.now()
+  }, [])
+
+  const onAgentsUpdated = useCallback((next: AgentSummary[]) => {
+    ownSaveAtRef.current = Date.now()
+    setAgents(next)
+  }, [])
+
   /* A cara de alguem mudou na VPS: o agente reescreveu o proprio arquivo, ou o
      painel daqui gravou. Em vez de confiar no que o app ja tem, perguntamos a
      lista de novo — a resposta do bridge e a verdade. */
@@ -143,7 +194,12 @@ export function App({ readyNotice = '' }: AppProps) {
     () =>
       subscribeAgentsChanged(() => {
         void fetchAgents()
-          .then(setAgents)
+          .then((next) => {
+            const recent = Date.now() - ownSaveAtRef.current < OWN_SAVE_WINDOW_MS
+            const found = recent ? null : describeChange(agentsRef.current, next)
+            if (found) setChange(found)
+            setAgents(next)
+          })
           .catch(() => undefined)
       }),
     [],
@@ -248,7 +304,7 @@ export function App({ readyNotice = '' }: AppProps) {
     setCompose((state) => ({ ...state, busy: true }))
     try {
       const answer = await sendMessage(slug, text)
-      setReply({ agentSlug: slug, text: answer })
+      setReply({ agentSlug: slug, text: answer.reply, echoed: answer.echoed })
       setCompose((state) =>
         // Trocou de agente no meio do caminho: o rascunho novo e dele, nao
         // deste envio — nao apagamos nada.
@@ -350,7 +406,10 @@ export function App({ readyNotice = '' }: AppProps) {
         notice={notice}
         onNoticeDone={() => setNotice('')}
         onWrite={write}
-        onAgentsUpdated={setAgents}
+        onAgentsUpdated={onAgentsUpdated}
+        onAgentsSaving={onAgentsSaving}
+        change={change}
+        onChangeDone={() => setChange(null)}
         compose={compose}
         onDraftChange={(draft) => setCompose((state) => ({ ...state, draft }))}
         onSendMessage={() => void sendCompose()}

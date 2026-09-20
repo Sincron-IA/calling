@@ -1,6 +1,6 @@
 # US-005 — Escrever para o agente e ler a resposta, que some sozinha
 
-**Status:** pending
+**Status:** implemented — aguardando smoke no app de desktop com o bridge (ver .sincron-auto/report.md)
 **Parent plan:** docs/exec-plans/plans/plan-001-barra-conversa.md
 **Created:** 2026-09-20
 **Updated:** 2026-09-20
@@ -35,7 +35,7 @@ caminho de voz e amarra a sessão ao `callId`.
 ## Critérios de aceitação
 
 ### FUNCIONAL
-- [ ] "escrever" na lista abre um campo de texto acima da barra, já com foco, dizendo para quem é ("para o Automa")
+- [ ] "escrever" na lista abre um campo de texto acima da barra, já com foco, dizendo para quem é ("Para · Automa")
 - [ ] `Enter` envia; `Shift+Enter` quebra linha; `Esc` fecha o campo e descarta o rascunho
 - [ ] As teclas NÃO ficam escritas na tela: elas vivem atrás de um `i` discreto no canto superior direito do campo
 - [ ] Passar o mouse no `i` (ou alcançá-lo por Tab) mostra o lembrete; tirar o mouse o esconde

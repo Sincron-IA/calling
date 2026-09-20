@@ -10,9 +10,54 @@
   --muted: #8b95a3;
   --accent: #4ade80;
   --danger: #f87171;
+  --line-strong: #2d3640;
+  --faint: #5f6975;
+  --mono: 'Geist Mono', ui-monospace, 'Cascadia Mono', monospace;
 
   color-scheme: dark;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Rotulo pequeno em caixa alta: "Agentes", "Para", nome no balao. */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Filete que conta o tempo de tudo o que some sozinho. E uma animacao CSS de
+   proposito: `animation-play-state` pausa junto com o relogio do JS no hover,
+   sem estado nenhum a mais. */
+.timer {
+  display: block;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.timer__fill {
+  display: block;
+  height: 100%;
+  background: var(--timer-color, var(--accent));
+  transform-origin: left center;
+  animation: timer-run var(--timer-ms, 5000ms) linear forwards;
+}
+
+.timer.is-held .timer__fill {
+  animation-play-state: paused;
+}
+
+@keyframes timer-run {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
 }
 
 * {
@@ -88,7 +133,7 @@ body {
   /* Largura de tudo o que abre acima do chip — menu, recado, e o que vier.
      Uma so, para a janela (que tem o tamanho do conteudo) nao mudar de largura
      conforme o que esta aberto. */
-  --rail: 240px;
+  --rail: 272px;
 
   position: fixed;
   right: 24px;
@@ -106,7 +151,7 @@ body {
   height: var(--disc-size);
   flex: 0 0 auto;
   border-radius: 50%;
-  border: 1px solid var(--disc-color);
+  border: 1.5px solid var(--disc-color);
   color: var(--disc-color);
   background: radial-gradient(circle at 50% 38%, #1b2128, var(--surface) 70%);
   display: inline-flex;
@@ -137,9 +182,50 @@ body {
 
 .chip.is-open,
 .chip:focus-within {
-  background: var(--surface-hover);
+  background: rgba(20, 24, 29, 0.9);
   border-color: var(--border);
-  backdrop-filter: blur(6px);
+  box-shadow: 0 14px 34px -18px rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(8px);
+}
+
+/* Alca de arrastar: seis pontos que so aparecem com o chip aceso. So existe
+   no app de desktop — no navegador nao ha janela para pegar. */
+.chip__grip {
+  display: none;
+}
+
+body.desktop-main .chip__grip {
+  display: grid;
+  grid-template-columns: repeat(2, 3px);
+  gap: 3px;
+  width: 0;
+  margin-right: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: width 0.24s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.2s ease,
+    margin-right 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+body.desktop-main .chip.is-open .chip__grip,
+body.desktop-main .chip:focus-within .chip__grip {
+  width: 9px;
+  margin-right: 10px;
+  opacity: 0.7;
+}
+
+.chip__grip i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+body.desktop-main .chip {
+  cursor: grab;
+}
+
+body.desktop-main .chip:active {
+  cursor: grabbing;
 }
 
 /* Tres barrinhas: mudas quando parado, vivas na ligacao. */
@@ -230,7 +316,7 @@ body {
 
 .chip.is-open .chip__reveal,
 .chip:focus-within .chip__reveal {
-  width: 34px;
+  width: 38px;
   margin-left: 9px;
   opacity: 1;
   overflow: visible;
@@ -296,35 +382,98 @@ body {
    esperar o relogio. Largura limitada a do menu: ele mora na mesma coluna e
    nao pode ser o que define a largura da janela. */
 .notice {
-  max-width: var(--rail);
-  padding: 8px 12px;
+  width: var(--rail);
+  padding: 12px 14px 0;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.9);
-  color: var(--text-2);
+  box-shadow: 0 24px 48px -24px rgba(0, 0, 0, 0.95);
+  color: var(--text);
   font: inherit;
-  font-size: 0.78rem;
-  line-height: 1.4;
   text-align: left;
   cursor: pointer;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  animation: notice-in 0.2s ease;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  animation: notice-in 0.18s ease;
 }
 
 .notice:hover {
-  background: var(--surface-hover);
-  color: var(--text);
+  background: #171c22;
 }
 
+.notice:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.notice__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.notice__text {
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.notice__sub {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* Ponto verde com halo: "esta vivo". */
 .notice__dot {
-  width: 7px;
-  height: 7px;
+  position: relative;
+  width: 9px;
+  height: 9px;
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.16);
+}
+
+.notice__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notice__discs {
+  display: flex;
+}
+
+.notice__discs .disc + .disc {
+  margin-left: -6px;
+}
+
+.notice__discs .disc {
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* O filete encosta nas bordas do cartao. */
+.notice > .timer,
+.bubble > .timer {
+  margin: 0 -14px;
+}
+
+/* Antes -> depois quando um agente muda a si mesmo. */
+.notice__swap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.notice__swap .disc:first-child {
+  opacity: 0.5;
 }
 
 @keyframes notice-in {
@@ -343,42 +492,153 @@ body {
 /* ------------------------------------------------------------------------ */
 .panel {
   width: var(--rail);
-  padding: 11px 12px 12px;
+  padding: 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 20px 44px -22px rgba(0, 0, 0, 0.9);
+  box-shadow: 0 24px 48px -24px rgba(0, 0, 0, 0.95);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  animation: notice-in 0.2s ease;
+  gap: 14px;
+  animation: notice-in 0.18s ease;
+}
+
+.panel__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel__close {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.panel__close:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
 }
 
 .panel__head {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding-bottom: 9px;
-  border-bottom: 1px solid var(--border);
+  gap: 14px;
+  padding: 6px;
+  margin: -6px;
+  border: 1px dashed transparent;
+  border-radius: 12px;
+  transition: border-color 0.16s ease, background 0.16s ease;
 }
 
-.panel__who {
+/* Arrastar uma imagem por cima do topo do painel tambem troca. */
+.panel__head.is-drop {
+  border-color: var(--panel-color, var(--accent));
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.panel__pick {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   min-width: 0;
 }
 
-.panel__title {
-  font-size: 0.8rem;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.panel__pick-row {
+  display: flex;
+  gap: 6px;
 }
 
-.panel__slug {
-  font-size: 0.62rem;
+.panel__hint {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  line-height: 1.4;
   color: var(--muted);
+}
+
+.panel__rule {
+  height: 1px;
+  margin: 0 -14px;
+  background: var(--border);
+}
+
+.panel__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panel__where {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.panel__save {
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--panel-color, var(--accent));
+  color: #0b0d10;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.panel__save:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.panel__save:focus-visible,
+.panel__ghost:focus-visible,
+.panel__close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.panel__ghost {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.panel__ghost--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+}
+
+.panel__ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.panel__ghost:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .field {
@@ -388,8 +648,9 @@ body {
 }
 
 .field__label {
-  font-size: 0.62rem;
-  letter-spacing: 0.06em;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -397,7 +658,8 @@ body {
 .field__input {
   width: 100%;
   min-width: 0;
-  padding: 6px 9px;
+  height: 34px;
+  padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
@@ -416,9 +678,11 @@ body {
 }
 
 .field__input--hex {
-  width: 78px;
+  width: 72px;
+  height: 28px;
+  padding: 0 8px;
   margin-left: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--mono);
   font-size: 0.68rem;
 }
 
@@ -426,12 +690,12 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .swatch {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   flex: 0 0 auto;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -450,66 +714,11 @@ body {
   outline-offset: 2px;
 }
 
-.drop {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 8px;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-}
-
-.drop__hint {
-  flex: 1 1 100%;
-  font-size: 0.62rem;
-  line-height: 1.35;
-  color: var(--muted);
-}
-
 .panel__error {
   margin: 0;
   font-size: 0.7rem;
   line-height: 1.4;
   color: var(--danger);
-}
-
-.panel__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 7px;
-}
-
-.btn {
-  padding: 5px 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-2);
-  font: inherit;
-  font-size: 0.72rem;
-  cursor: pointer;
-}
-
-.btn:hover:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.btn:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.btn--go {
-  background: rgba(74, 222, 128, 0.16);
-  border-color: rgba(74, 222, 128, 0.42);
-  color: var(--accent);
-}
-
-.btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -520,35 +729,40 @@ body {
 /* sessao do agente. Isso e ESCOLHA, nao falta; ver docs/sincron/DECISIONS.  */
 /* ------------------------------------------------------------------------ */
 .bubble {
-  max-width: 280px;
-  padding: 8px 12px 9px;
+  width: var(--rail);
+  padding: 12px 14px 0;
   border: 1px solid var(--border);
-  border-left: 2px solid var(--bubble-color, var(--accent));
-  border-radius: 12px 12px 12px 4px;
+  border-radius: 14px 14px 14px 5px;
   background: var(--surface);
-  box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.9);
+  box-shadow: 0 24px 48px -24px rgba(0, 0, 0, 0.95);
   color: var(--text-2);
   font: inherit;
   text-align: left;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  animation: notice-in 0.2s ease;
+  gap: 6px;
+  overflow: hidden;
+  animation: notice-in 0.18s ease;
 }
 
 .bubble:hover {
-  background: var(--surface-hover);
+  background: #171c22;
 }
 
 .bubble--error {
-  border-left-color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.35);
+  padding-bottom: 12px;
+}
+
+.bubble__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .bubble__who {
-  font-size: 0.62rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--bubble-color, var(--accent));
 }
 
@@ -556,11 +770,34 @@ body {
   color: var(--danger);
 }
 
+/* "na thread": o recado tambem chegou no Telegram do agente. */
+.bubble__echo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--accent);
+}
+
+.bubble__close {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+.bubble:hover .bubble__close,
+.bubble:focus-visible .bubble__close {
+  opacity: 1;
+}
+
 /* Seis linhas e o teto: passou disso, o balao vira parede de texto e a janela
    do app cresce junto com ela. */
 .bubble__text {
-  font-size: 0.79rem;
-  line-height: 1.45;
+  font-size: 0.8rem;
+  line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 6;
   line-clamp: 6;
@@ -568,20 +805,29 @@ body {
   overflow: hidden;
 }
 
+.bubble > .timer {
+  margin-top: 6px;
+}
+
 /* ------------------------------------------------------------------------ */
 /* O campo de escrever                                                       */
 /* ------------------------------------------------------------------------ */
 .compose {
   width: var(--rail);
-  padding: 7px 8px 8px 10px;
+  padding: 10px 10px 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.9);
+  box-shadow: 0 24px 48px -24px rgba(0, 0, 0, 0.95);
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  animation: notice-in 0.2s ease;
+  gap: 7px;
+  animation: notice-in 0.18s ease;
+  transition: border-color 0.16s ease;
+}
+
+.compose:focus-within {
+  border-color: var(--line-strong);
 }
 
 .compose__head {
@@ -594,10 +840,11 @@ body {
 .compose__to {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   min-width: 0;
-  font-size: 0.62rem;
-  letter-spacing: 0.05em;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
   overflow: hidden;
@@ -607,9 +854,16 @@ body {
 
 /* O `i` que guarda o lembrete das teclas. Discreto parado, aceso quando
    alguem chega nele — a mesma regra da engrenagem. */
+.compose__to b {
+  font-weight: 400;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .compose__hint {
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
   flex: 0 0 auto;
   padding: 0;
   border: 1px solid var(--border);
@@ -617,7 +871,8 @@ body {
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 0.56rem;
+  font-family: Georgia, serif;
+  font-size: 0.62rem;
   font-style: italic;
   font-weight: 600;
   line-height: 1;
@@ -638,9 +893,13 @@ body {
    fluxo, a janela, que tem o tamanho do conteudo, pularia a cada passada do
    mouse. */
 .compose__line {
-  min-height: 12px;
-  font-size: 0.62rem;
-  line-height: 12px;
+  min-height: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  line-height: 14px;
   color: var(--muted);
   opacity: 0;
   transition: opacity 0.16s ease;
@@ -648,6 +907,19 @@ body {
 
 .compose__line.is-open {
   opacity: 1;
+}
+
+.compose__line kbd {
+  font: inherit;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+/* "Fulano esta pensando": na cor do agente, com os tres pontos na frente. */
+.compose__line.is-busy {
+  font-family: inherit;
+  font-size: 0.72rem;
+  color: var(--compose-color, var(--accent));
 }
 
 .compose__field {
@@ -684,13 +956,13 @@ body {
 }
 
 .compose__send {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
   padding: 0;
   border: 0;
-  border-radius: 7px;
-  background: var(--accent);
+  border-radius: 9px;
+  background: var(--compose-color, var(--accent));
   color: #0b0d10;
   display: inline-flex;
   align-items: center;
@@ -749,26 +1021,38 @@ body {
   padding: 6px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.9);
+  border-radius: 14px;
+  box-shadow: 0 24px 48px -24px rgba(0, 0, 0, 0.95);
   display: flex;
   flex-direction: column;
   gap: 2px;
+  animation: notice-in 0.18s ease;
 }
 
-/* A linha nao e mais um botao: ela SEGURA dois. Ver o comentario no
+.menu__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 8px;
+}
+
+.menu__online {
+  color: var(--accent);
+}
+
+/* A linha nao e mais um botao: ela SEGURA os botoes. Ver o comentario no
    `CallingBar.tsx` — escrever nao pode virar o clique padrao de quem so queria
    ligar. */
 .menu__row {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   width: 100%;
-  padding: 5px 6px 5px 8px;
-  border-radius: 7px;
+  min-height: 44px;
+  padding: 0 4px 0 8px;
+  border-radius: 9px;
   background: transparent;
   color: var(--text);
-  font-size: 0.78rem;
 }
 
 .menu__row:hover,
@@ -777,22 +1061,73 @@ body {
 }
 
 .menu__row.is-current {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.menu__row.is-current:hover,
+.menu__row.is-current:focus-within {
+  background: #1b2128;
+}
+
+/* O disco E o botao de aparencia: o lapis so aparece quando alguem chega
+   nele. A linha continua quieta em repouso. */
+.menu__face {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  display: flex;
+  cursor: pointer;
+}
+
+.menu__pencil {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--text);
+  color: #0b0d10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px #1b2128;
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.menu__row:hover .menu__pencil,
+.menu__face:focus-visible .menu__pencil {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.menu__who {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 /* Nome longo corta aqui dentro: ele nao pode empurrar a largura da coluna
    (que e a largura da janela). */
 .menu__name {
-  flex: 1 1 auto;
-  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .menu__tag {
+  font-family: var(--mono);
+  font-size: 0.6rem;
   color: var(--muted);
-  font-size: 0.66rem;
 }
 
 .menu__acts {
@@ -802,25 +1137,32 @@ body {
 }
 
 .menu__act {
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+
+.menu__row:hover .menu__act,
+.menu__row:focus-within .menu__act,
+.menu__row.is-current .menu__act {
+  opacity: 1;
 }
 
 .menu__act:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--line-strong);
   color: var(--text);
 }
-
 /* Com imagem, o fundo e o recorte mudam — a borda na cor do agente fica. */
 .disc--photo {
   background: var(--surface);
@@ -836,12 +1178,6 @@ body {
   display: block;
 }
 
-.menu__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-}
 
 /* ---- Chamada recebida ---------------------------------------------------- */
 
@@ -1001,6 +1337,7 @@ body {
 .chip__avatar:focus-visible,
 .chip__chevron:focus-visible,
 .menu__act:focus-visible,
+.menu__face:focus-visible,
 .bubble:focus-visible,
 .notice:focus-visible,
 .compose__send:focus-visible,

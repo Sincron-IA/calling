@@ -35,6 +35,20 @@ export interface ReplyBubble {
   text: string
   /** Erro nao sai sozinho — ele pede uma decisao. */
   isError?: boolean
+  /** O recado tambem chegou na thread do agente no Telegram. */
+  echoed?: boolean
+}
+
+/**
+ * Um agente mudou a propria cara (pelo arquivo dele na VPS, nao por aqui).
+ * Guardamos o ANTES para mostrar antes -> depois num olhar.
+ */
+export interface AgentChange {
+  slug: string
+  /** "trocou de cor", "trocou de nome", "trocou a imagem"... */
+  what: string
+  beforeName: string
+  beforeColor: string
 }
 
 export interface CallingBarProps {
@@ -76,6 +90,11 @@ export interface CallingBarProps {
   onReplyDone?: () => void
   /** A lista nova, depois que a cara de alguem foi editada por aqui. */
   onAgentsUpdated?: (agents: AgentSummary[]) => void
+  /** O painel comecou a gravar a cara de alguem. */
+  onAgentsSaving?: () => void
+  /** Aviso de que um agente mudou a si mesmo. */
+  change?: AgentChange | null
+  onChangeDone?: () => void
 }
 
 function formatDuration(ms: number): string {
@@ -102,16 +121,21 @@ function CheckIcon() {
   )
 }
 
-function PhoneIcon() {
+function PhoneIcon({ size = 13 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">
-      <path
-        d="M5.2 2.6 6.4 5 5.1 6.4a8.3 8.3 0 0 0 4.5 4.5L11 9.6l2.4 1.2v2.1c0 .6-.5 1.1-1.1 1C6.6 13.5 2.5 9.4 2 3.7c0-.6.4-1.1 1-1.1h2.2z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
     </svg>
   )
 }
@@ -131,17 +155,22 @@ function CloseIcon() {
 }
 
 /** Aviaozinho: a acao DESPACHA um recado — nao edita um texto parado. */
-function SendIcon() {
+function SendIcon({ size = 15 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">
-      <path
-        d="M13.9 2.4 2.5 6.9l4.3 1.8 1.8 4.3z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinejoin="round"
-      />
-      <path d="M13.9 2.4 6.8 8.7" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="m22 2-7 20-4-9-9-4Z" />
+      <path d="M22 2 11 13" />
     </svg>
   )
 }
@@ -149,12 +178,51 @@ function SendIcon() {
 /** Lapis: aqui SIM e editar — a aparencia do agente. */
 function PencilIcon() {
   return (
-    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">
-      <path
-        d="M2.5 12.2V13.5h1.3l7.1-7.1-1.3-1.3-7.1 7.1zM12.6 4.2c.2-.2.2-.5 0-.6l-.8-.8c-.2-.2-.5-.2-.6 0l-.7.7 1.4 1.4.7-.7z"
-        fill="currentColor"
-      />
+    <svg
+      viewBox="0 0 24 24"
+      width="8"
+      height="8"
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
     </svg>
+  )
+}
+
+function ArrowIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 12h14" />
+      <path d="m12 5 7 7-7 7" />
+    </svg>
+  )
+}
+
+/** Os tres pontos do "esta pensando". */
+function Thinking() {
+  return (
+    <span className="thinking" aria-hidden="true">
+      <i />
+      <i />
+      <i />
+    </span>
   )
 }
 
@@ -315,6 +383,9 @@ export function CallingBar({
   reply = null,
   onReplyDone,
   onAgentsUpdated,
+  onAgentsSaving,
+  change = null,
+  onChangeDone,
 }: CallingBarProps) {
   const [hovered, setHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -406,6 +477,18 @@ export function CallingBar({
     const id = window.setTimeout(() => noticeDoneRef.current?.(), NOTICE_TIMEOUT_MS)
     return () => window.clearTimeout(id)
   }, [notice])
+
+  // O "fulano mudou" segue a mesma regra do recado: sai sozinho, ou no clique.
+  const changeDoneRef = useRef(onChangeDone)
+  useEffect(() => {
+    changeDoneRef.current = onChangeDone
+  }, [onChangeDone])
+
+  useEffect(() => {
+    if (!change) return
+    const id = window.setTimeout(() => changeDoneRef.current?.(), NOTICE_TIMEOUT_MS)
+    return () => window.clearTimeout(id)
+  }, [change])
 
   /* O balao sai sozinho — mas so o que E resposta. Erro fica ate alguem
      decidir o que fazer com ele.
@@ -569,9 +652,83 @@ export function CallingBar({
     <div className="bar" ref={rootRef}>
       {/* Recado curto, em fluxo como o menu — ver o porque logo abaixo. */}
       {notice && (
-        <button type="button" className="notice" onClick={() => onNoticeDone?.()}>
-          <span className="notice__dot" aria-hidden="true" />
-          {notice}
+        <button
+          type="button"
+          className="notice"
+          onClick={() => onNoticeDone?.()}
+          aria-live="polite"
+          title="Fechar"
+        >
+          <span className="notice__line">
+            <span className="notice__dot" aria-hidden="true" />
+            <span className="notice__text">{notice}</span>
+          </span>
+          {/* Quem esta na linha, num olhar: os discos e o numero. */}
+          <span className="notice__foot">
+            <span className="notice__discs" aria-hidden="true">
+              {agents.slice(0, 6).map((agent) => (
+                <AgentDisc
+                  key={agent.slug}
+                  name={agent.name}
+                  color={colorOf(agent.slug)}
+                  src={avatarOf?.(agent.slug)}
+                  size={24}
+                />
+              ))}
+            </span>
+            <span className="eyebrow">
+              {agents.length === 1 ? '1 agente' : `${agents.length} agentes`}
+            </span>
+          </span>
+          <span
+            key={notice}
+            className="timer"
+            style={{ '--timer-ms': `${NOTICE_TIMEOUT_MS}ms` } as CSSProperties}
+            aria-hidden="true"
+          >
+            <span className="timer__fill" />
+          </span>
+        </button>
+      )}
+
+      {/* Um agente mudou a propria cara pela VPS: antes -> depois. */}
+      {change && (
+        <button
+          type="button"
+          className="notice"
+          onClick={() => onChangeDone?.()}
+          aria-live="polite"
+          title="Fechar"
+        >
+          <span className="notice__line">
+            <span className="notice__swap" aria-hidden="true">
+              <AgentDisc name={change.beforeName} color={change.beforeColor} size={28} />
+              <ArrowIcon />
+              <AgentDisc
+                name={nameOf(change.slug)}
+                color={colorOf(change.slug)}
+                src={avatarOf?.(change.slug)}
+                size={28}
+              />
+            </span>
+            <span className="notice__text">
+              {change.beforeName} {change.what}
+              <span className="notice__sub">pelo próprio workspace</span>
+            </span>
+          </span>
+          <span
+            key={`${change.slug}:${change.what}`}
+            className="timer"
+            style={
+              {
+                '--timer-ms': `${NOTICE_TIMEOUT_MS}ms`,
+                '--timer-color': colorOf(change.slug),
+              } as CSSProperties
+            }
+            aria-hidden="true"
+          >
+            <span className="timer__fill" />
+          </span>
         </button>
       )}
 
@@ -588,10 +745,36 @@ export function CallingBar({
           aria-live="polite"
           title="Fechar"
         >
-          <span className="bubble__who">
-            {reply.isError ? 'não consegui mandar' : nameOf(reply.agentSlug)}
+          <span className="bubble__head">
+            <span className="eyebrow bubble__who">
+              {reply.isError ? 'não consegui mandar' : nameOf(reply.agentSlug)}
+            </span>
+            {reply.echoed ? (
+              <span className="bubble__echo">
+                <CheckIcon />
+                na thread
+              </span>
+            ) : (
+              <span className="bubble__close">clique para fechar</span>
+            )}
           </span>
           <span className="bubble__text">{reply.text}</span>
+          {/* Erro nao tem relogio: fica ate alguem decidir. */}
+          {!reply.isError && (
+            <span
+              key={`${reply.agentSlug}:${reply.text}`}
+              className={`timer${replyHeld ? ' is-held' : ''}`}
+              style={
+                {
+                  '--timer-ms': `${REPLY_TIMEOUT_MS}ms`,
+                  '--timer-color': colorOf(reply.agentSlug),
+                } as CSSProperties
+              }
+              aria-hidden="true"
+            >
+              <span className="timer__fill" />
+            </span>
+          )}
         </button>
       )}
 
@@ -605,6 +788,12 @@ export function CallingBar({
           ancorada pelo `bottom`. */}
       {menuOpen && agents.length > 0 && (
         <div className="menu" role="menu" aria-label="Agentes">
+          <div className="menu__head" role="presentation">
+            <span className="eyebrow">Agentes</span>
+            <span className="eyebrow menu__online">
+              {agents.length === 1 ? '1 na linha' : `${agents.length} na linha`}
+            </span>
+          </div>
           {agents.map((agent) => {
             const isCurrent = agent.slug === current.slug
             return (
@@ -613,26 +802,30 @@ export function CallingBar({
                  clica na linha esperando LIGAR passaria a errar todas as vezes.
                  Duas acoes nomeadas, nenhum significado trocado por baixo. */
               <div key={agent.slug} className={`menu__row${isCurrent ? ' is-current' : ''}`}>
-                <span
-                  className="menu__dot"
-                  style={{ background: colorOf(agent.slug) }}
-                  aria-hidden="true"
-                />
-                <span className="menu__name">
-                  {agent.name}
-                  {isCurrent && <span className="menu__tag"> · atual</span>}
+                {/* O disco E o botao de aparencia: o lapis aparece no hover. */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="menu__face"
+                  onClick={() => editAgent(agent.slug)}
+                  title={`Aparência de ${agent.name}`}
+                  aria-label={`Aparência de ${agent.name}`}
+                >
+                  <AgentDisc
+                    name={agent.name}
+                    color={colorOf(agent.slug)}
+                    src={avatarOf?.(agent.slug)}
+                    size={28}
+                  />
+                  <span className="menu__pencil" aria-hidden="true">
+                    <PencilIcon />
+                  </span>
+                </button>
+                <span className="menu__who">
+                  <span className="menu__name">{agent.name}</span>
+                  <span className="menu__tag">{isCurrent ? 'no chip' : 'disponível'}</span>
                 </span>
                 <span className="menu__acts">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="menu__act"
-                    onClick={() => editAgent(agent.slug)}
-                    title={`Aparência de ${agent.name}`}
-                    aria-label={`Aparência de ${agent.name}`}
-                  >
-                    <PencilIcon />
-                  </button>
                   <button
                     type="button"
                     role="menuitem"
@@ -666,21 +859,26 @@ export function CallingBar({
           color={colorOf(agentBeingEdited.slug)}
           avatar={avatarOf?.(agentBeingEdited.slug) ?? ''}
           onClose={() => setEditFor('')}
+          onSaving={() => onAgentsSaving?.()}
           onSaved={(next) => onAgentsUpdated?.(next)}
         />
       )}
 
       {composeFor && compose && (
-        <div className="compose">
+        <div
+          className="compose"
+          style={{ '--compose-color': colorOf(composeFor) } as CSSProperties}
+        >
           <div className="compose__head">
             <span className="compose__to">
+              Para
               <AgentDisc
                 name={nameOf(composeFor)}
                 color={colorOf(composeFor)}
-                size={18}
+                size={16}
                 src={avatarOf?.(composeFor)}
               />
-              para o {nameOf(composeFor)}
+              <b>{nameOf(composeFor)}</b>
             </span>
             {/* O tutorial mora AQUI DENTRO, escondido: as teclas so aparecem
                 para quem for procurar por elas. */}
@@ -702,10 +900,27 @@ export function CallingBar({
               ora com o "esta pensando", ora vazia. Se ela entrasse e saisse, a
               janela (que tem o tamanho do conteudo) pularia a cada passada do
               mouse pelo `i`. */}
-          <span className={`compose__line${compose.busy || hintOpen ? ' is-open' : ''}`}>
-            {compose.busy
-              ? `${nameOf(composeFor)} está pensando…`
-              : 'Enter manda · Shift+Enter quebra linha · Esc fecha'}
+          <span
+            className={`compose__line${compose.busy || hintOpen ? ' is-open' : ''}${compose.busy ? ' is-busy' : ''}`}
+          >
+            {compose.busy ? (
+              <>
+                <Thinking />
+                {nameOf(composeFor)} está pensando
+              </>
+            ) : (
+              <>
+                <span>
+                  <kbd>Enter</kbd> manda
+                </span>
+                <span>
+                  <kbd>Shift+Enter</kbd> linha
+                </span>
+                <span>
+                  <kbd>Esc</kbd> fecha
+                </span>
+              </>
+            )}
           </span>
 
           <div className="compose__field">
@@ -737,15 +952,7 @@ export function CallingBar({
               aria-label={`Mandar para ${nameOf(composeFor)}`}
               title="Mandar"
             >
-              {compose.busy ? (
-                <span className="thinking" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              ) : (
-                <SendIcon />
-              )}
+              <SendIcon />
             </button>
           </div>
         </div>
@@ -756,6 +963,16 @@ export function CallingBar({
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
       >
+        {/* Alca de arrastar: so no app de desktop, e so com o chip aceso. */}
+        <span className="chip__grip" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <i />
+          <i />
+          <i />
+        </span>
+
         {/* Parado: tres barrinhas mudas. Na linha: as mesmas tres, vivas. */}
         <span className={`wave${active ? ' wave--live' : ''}`} aria-hidden="true">
           <i />
@@ -777,7 +994,7 @@ export function CallingBar({
             <AgentDisc
               name={current.name}
               color={currentColor}
-              size={28}
+              size={32}
               src={avatarOf?.(current.slug)}
             />
           </button>

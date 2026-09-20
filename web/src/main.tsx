@@ -4,6 +4,13 @@ import { App } from './App'
 import { ConfigPanel } from './ConfigPanel'
 import { DesktopGate } from './DesktopGate'
 import { isConfigPanel, isDesktop, isDesktopMainWindow } from './desktop'
+// Fontes empacotadas com o app: a janela do desktop nao pode depender de rede
+// para desenhar a propria letra.
+import '@fontsource/geist/400.css'
+import '@fontsource/geist/500.css'
+import '@fontsource/geist/600.css'
+import '@fontsource/geist-mono/400.css'
+import '@fontsource/geist-mono/500.css'
 import './styles.css'
 
 // As duas janelas do app de desktop flutuam sem moldura e SAO transparentes

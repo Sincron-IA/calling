@@ -175,9 +175,19 @@ export async function fetchAvatar(agentSlug: string, version: number): Promise<s
  * Rota propria, nao a `/api/ask`: aquela e do caminho de voz e amarra a sessao
  * ao `callId` da ligacao. Aqui a sessao e do agente e dura entre mensagens.
  */
-export async function sendMessage(agentSlug: string, text: string): Promise<string> {
-  const data = await post<{ reply: string }>('/api/message', { agent: agentSlug, text })
-  return data.reply
+export interface MessageResult {
+  reply: string
+  /** O recado tambem chegou na thread do agente no Telegram. */
+  echoed: boolean
+}
+
+export async function sendMessage(agentSlug: string, text: string): Promise<MessageResult> {
+  const data = await post<{ reply: string; echoed?: boolean }>('/api/message', {
+    agent: agentSlug,
+    text,
+  })
+  // Bridge antigo nao manda `echoed`: sem a informacao, nao afirmamos nada.
+  return { reply: data.reply, echoed: data.echoed === true }
 }
 
 /** Implementacao remota da tool ask_agent. */

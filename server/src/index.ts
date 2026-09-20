@@ -324,8 +324,10 @@ app.post('/api/message', requireSecret, async (req, res) => {
 
   // O eco sai ANTES de o agente pensar: quem le a thread fica sabendo do
   // pedido na hora, nao seis segundos depois. Nao esperamos por ele — Telegram
-  // lento ou fora do ar nao pode atrasar a resposta ao dono.
-  void echoToThread(agent, text)
+  // lento ou fora do ar nao pode atrasar a resposta ao dono: ele corre junto
+  // com o agente e, quando a resposta chega, ja terminou (o eco tem teto de
+  // tempo proprio). `echoToThread` nunca lanca.
+  const echo = echoToThread(agent, text)
 
   try {
     const result = await sendText({ agentSlug: agent, text })
@@ -335,7 +337,7 @@ app.post('/api/message', requireSecret, async (req, res) => {
       { agent, durationMs: result.durationMs },
       `${agent} respondeu um recado em ${result.durationMs}ms`,
     )
-    res.json({ reply: result.reply })
+    res.json({ reply: result.reply, echoed: await echo })
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500
     logEvent(
