@@ -43,11 +43,17 @@ export function ConfigPanel() {
         setSaved({ bridgeUrl: stored.bridgeUrl || DEFAULT_BRIDGE_URL, sharedSecret: stored.sharedSecret })
         setSecretPersisted(stored.secretPersisted)
       }
-      setLoaded(true)
 
-      if (!stored?.bridgeUrl || !stored.sharedSecret) return
+      if (!stored?.bridgeUrl || !stored.sharedSecret) {
+        setLoaded(true)
+        return
+      }
 
       // Confere em silencio so para dizer no cabecalho como esta a conexao.
+      //
+      // O "Abrindo…" fica ate esta resposta chegar DE PROPOSITO: e ela que diz
+      // se o painel mostra o formulario ou so o selo de conectado. Abrir antes
+      // seria piscar o formulario na cara de quem esta com tudo funcionando.
       setConfig({ bridgeUrl: stored.bridgeUrl, sharedSecret: stored.sharedSecret })
       try {
         await fetchAgents()
@@ -55,6 +61,7 @@ export function ConfigPanel() {
       } catch {
         if (alive) setStatus('reconectar')
       }
+      if (alive) setLoaded(true)
     })()
 
     return () => {
@@ -138,6 +145,10 @@ export function ConfigPanel() {
       error={error}
       secretPersisted={secretPersisted}
       statusLabel={status}
+      // So `conectado` esconde o formulario. `sem chave` (primeira vez) e
+      // `reconectar` (sessao do Cloudflare vencida, ou chave errada) precisam
+      // dele — e para isso que a pessoa abriu o painel.
+      connected={status === 'conectado'}
       compact
       onConnect={(url, secret) => void connect(url, secret)}
       onCancel={close}

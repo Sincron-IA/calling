@@ -6,6 +6,10 @@
  * email), so que dentro da janela do app — quem faz isso e o processo
  * principal do Electron (`electron/login-window.js`).
  *
+ * Com `connected`, a mesma tela vira o oposto: nada de formulario, so a linha
+ * que diz que esta tudo de pe. E o que o painel da engrenagem mostra quando a
+ * conferencia com o bridge passou.
+ *
  * Esta tela so aparece dentro do app de desktop. No navegador o app continua
  * lendo o `.env`, como sempre.
  */
@@ -34,6 +38,19 @@ export interface ConnectScreenProps {
   compact?: boolean
   /** Uma palavra no canto do cabecalho: "conectado", "sem chave"… */
   statusLabel?: string
+  /**
+   * Ja esta tudo conectado — entao NAO ha formulario.
+   *
+   * Esta tela nasceu para a PRIMEIRA conexao e o painel da engrenagem a
+   * reaproveitou para tambem mostrar o estado "ja conectado". Sem isto ele
+   * pedia endereco, chave e "Conectar ao Cloudflare" de novo, com o selo
+   * "conectado" logo ali em cima — duas coisas opostas na mesma tela.
+   *
+   * Quem decide e quem chama: so o painel, e so quando a conferencia com o
+   * bridge passou. Sessao vencida ou sem chave continuam vendo o formulario,
+   * que e o que resolve o problema deles.
+   */
+  connected?: boolean
   /** Linha de acoes no pe do cartao (so o painel usa). */
   footer?: ReactNode
 }
@@ -68,6 +85,7 @@ export function ConnectScreen({
   cancelLabel = 'Voltar',
   compact = false,
   statusLabel,
+  connected = false,
   footer,
 }: ConnectScreenProps) {
   const [url, setUrl] = useState(defaultBridgeUrl)
@@ -111,45 +129,65 @@ export function ConnectScreen({
           {statusLabel && <span className="connect__state">{statusLabel}</span>}
         </header>
 
-        <label className="connect__field">
-          <span className="connect__label">Endereço do bridge</span>
-          <input
-            className="connect__input"
-            type="url"
-            inputMode="url"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="https://calling-bridge.sincronia.digital"
-            value={url}
-            disabled={busy}
-            onChange={(e) => setUrl(e.target.value)}
-          />
-        </label>
+        {connected ? (
+          /* Nada a fazer aqui: endereco, chave e sessao do Cloudflare estao de
+             pe. Fica so a linha que diz isso — e um caminho discreto para
+             refazer o login, que e o unico motivo de alguem querer o
+             formulario de volta com tudo funcionando. */
+          <>
+            <p className="connect__hint">
+              Conectado ao Cloudflare.{' '}
+              {secretPersisted
+                ? 'O endereço e a chave já estão guardados.'
+                : 'O endereço já está guardado.'}
+            </p>
+            <button className="connect__link" type="submit" disabled={busy}>
+              Conectar de novo
+            </button>
+          </>
+        ) : (
+          <>
+            <label className="connect__field">
+              <span className="connect__label">Endereço do bridge</span>
+              <input
+                className="connect__input"
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="https://calling-bridge.sincronia.digital"
+                value={url}
+                disabled={busy}
+                onChange={(e) => setUrl(e.target.value)}
+              />
+            </label>
 
-        <label className="connect__field">
-          <span className="connect__label">Chave do app</span>
-          <input
-            className="connect__input"
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="••••••••••••••••"
-            value={secret}
-            disabled={busy}
-            onChange={(e) => setSecret(e.target.value)}
-          />
-        </label>
+            <label className="connect__field">
+              <span className="connect__label">Chave do app</span>
+              <input
+                className="connect__input"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="••••••••••••••••"
+                value={secret}
+                disabled={busy}
+                onChange={(e) => setSecret(e.target.value)}
+              />
+            </label>
 
-        <button
-          className="connect__button"
-          type="submit"
-          disabled={!ready || busy}
-          aria-busy={busy || undefined}
-          aria-live="polite"
-        >
-          {busy && <span className="connect__spinner" aria-hidden="true" />}
-          {busy ? (waiting ? 'Esperando o login…' : 'Abrindo…') : 'Conectar ao Cloudflare'}
-        </button>
+            <button
+              className="connect__button"
+              type="submit"
+              disabled={!ready || busy}
+              aria-busy={busy || undefined}
+              aria-live="polite"
+            >
+              {busy && <span className="connect__spinner" aria-hidden="true" />}
+              {busy ? (waiting ? 'Esperando o login…' : 'Abrindo…') : 'Conectar ao Cloudflare'}
+            </button>
+          </>
+        )}
 
         {waiting && (
           <p className="connect__hint" role="status">
