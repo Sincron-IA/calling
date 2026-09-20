@@ -32,6 +32,9 @@ async function post<T>(path: string, body: unknown): Promise<T> {
       authorization: `Bearer ${SECRET}`,
     },
     body: JSON.stringify(body),
+    // Leva o cookie do Cloudflare Access junto; sem ele o Access barra a
+    // chamada antes de ela chegar no bridge.
+    credentials: 'include',
   })
 
   if (!res.ok) {
@@ -44,6 +47,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 export async function fetchAgents(): Promise<AgentSummary[]> {
   const res = await fetch(`${BRIDGE_URL}/api/agents`, {
     headers: { authorization: `Bearer ${SECRET}` },
+    credentials: 'include',
   })
   if (!res.ok) throw new Error(`Nao consegui listar os agentes (${res.status})`)
   const data = (await res.json()) as { agents: AgentSummary[] }
@@ -76,5 +80,6 @@ export function endCall(callId: string): void {
     },
     body: JSON.stringify({ callId }),
     keepalive: true,
+    credentials: 'include',
   }).catch(() => undefined)
 }

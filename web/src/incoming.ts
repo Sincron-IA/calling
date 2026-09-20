@@ -86,7 +86,9 @@ function ensureStream(): void {
   // EventSource nao aceita cabecalho: o segredo vai na query (o bridge aceita
   // os dois jeitos). E o mesmo segredo que o app ja carrega.
   const url = `${BRIDGE_URL}/api/incoming/stream?token=${encodeURIComponent(SHARED_SECRET)}`
-  const es = new EventSource(url)
+  // O EventSource nao aceita `credentials`: o equivalente dele e o
+  // `withCredentials` do init, que manda o cookie do Access na conexao SSE.
+  const es = new EventSource(url, { withCredentials: true })
   source = es
 
   es.addEventListener('hello', (event) => {
@@ -133,6 +135,8 @@ function resolveOnBridge(call: IncomingCall, action: 'approve' | 'decline' | 'an
     method: 'POST',
     headers: { authorization: `Bearer ${SHARED_SECRET}` },
     keepalive: true,
+    // Cookie do Cloudflare Access junto, como nas demais chamadas ao bridge.
+    credentials: 'include',
   }).catch((err: Error) => {
     console.warn(`[calling] nao consegui avisar o bridge (${action}):`, err.message)
   })

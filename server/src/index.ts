@@ -43,6 +43,10 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) return callback(null, true)
       callback(new Error('Origem nao permitida'))
     },
+    // O browser so entrega a resposta ao JS se ela vier com este cabecalho —
+    // e o fetch do front manda `credentials: 'include'` para o cookie do
+    // Cloudflare Access (CF_Authorization) acompanhar cada chamada.
+    credentials: true,
   }),
 )
 app.use(express.json({ limit: '128kb' }))
