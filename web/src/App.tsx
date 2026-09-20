@@ -95,13 +95,19 @@ export function App({ readyNotice = '' }: AppProps) {
     }
 
     let alive = true
-    const mine: string[] = []
+    const made: string[] = []
 
     void Promise.all(
       wanted.map(async (agent) => {
         try {
           const url = await fetchAvatar(agent.slug, agent.avatarVersion ?? 0)
-          mine.push(url)
+          // CHEGOU TARDE: a lista ja mudou e a limpeza ja rodou. Este blob nao
+          // esta em `made`, entao ninguem mais o soltaria — solta aqui mesmo.
+          if (!alive) {
+            URL.revokeObjectURL(url)
+            return null
+          }
+          made.push(url)
           return [agent.slug, url] as const
         } catch {
           // Agente sem imagem servivel continua com a inicial: nao e erro.
@@ -115,7 +121,7 @@ export function App({ readyNotice = '' }: AppProps) {
 
     return () => {
       alive = false
-      mine.forEach((url) => URL.revokeObjectURL(url))
+      made.forEach((url) => URL.revokeObjectURL(url))
     }
   }, [agents])
 
