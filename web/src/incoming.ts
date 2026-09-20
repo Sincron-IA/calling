@@ -81,7 +81,12 @@ let source: EventSource | null = null
  * entao a tela volta ao estado certo mesmo depois de uma queda de rede.
  */
 function ensureStream(): void {
-  if (source || typeof EventSource === 'undefined') return
+  if (typeof EventSource === 'undefined') return
+  // Um EventSource CLOSED nao tenta mais nada — e e exatamente nisso que ele
+  // termina quando o Access vence: o bridge responde com um redirecionamento
+  // para a tela de login, que chega como HTML e derruba o fluxo de vez. Tratar
+  // como "nao existe" e o que faz a fila voltar depois de um novo login.
+  if (source && source.readyState !== EventSource.CLOSED) return
 
   // EventSource nao aceita cabecalho: o segredo vai na query (o bridge aceita
   // os dois jeitos). E o mesmo segredo que o app ja carrega.
@@ -108,7 +113,15 @@ function ensureStream(): void {
   })
 
   es.onerror = () => {
-    // Nao fechamos: o proprio EventSource tenta de novo sozinho.
+    if (es.readyState === EventSource.CLOSED) {
+      // Desistiu de vez (tipico de sessao do Access vencida). Solta a
+      // referencia para nao segurar um fluxo morto e nao ficar batendo no
+      // endpoint de login do Cloudflare enquanto o Luiz digita o codigo.
+      if (source === es) source = null
+      console.warn('[calling] fluxo de chamadas encerrado; reconecte para voltar.')
+      return
+    }
+    // Queda comum: o proprio EventSource tenta de novo sozinho.
     console.warn('[calling] fluxo de chamadas caiu; tentando reconectar…')
   }
 }

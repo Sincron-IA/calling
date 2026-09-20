@@ -15,11 +15,33 @@
 
 const { BrowserWindow, session } = require('electron')
 
-/** Quanto tempo esperamos o login humano antes de desistir. */
-const LOGIN_TIMEOUT_MS = 3 * 60_000
+/**
+ * Quanto tempo esperamos o login humano antes de desistir.
+ *
+ * Isto e tempo de GENTE, nao de rede: o Access manda um codigo por email, e o
+ * caminho ate ele (trocar de app, esperar a mensagem cair, voltar, digitar)
+ * passa facil de tres minutos. Se a janela morrer no meio disso, a proxima
+ * tentativa recomeca o login do zero em `${bridge}/health` — ou seja, o Access
+ * abre uma NOVA tentativa de login, e o codigo que ja tinha sido enviado morre
+ * junto com a tentativa anterior. Dai o loop: pede codigo, chega tarde, nao
+ * vale mais, pede outro. Quinze minutos cobrem a ida ao email com folga.
+ */
+const LOGIN_TIMEOUT_MS = 15 * 60_000
 
 /** Se em alguns segundos nada aconteceu, mostramos a janela mesmo assim. */
 const REVEAL_AFTER_MS = 2_500
+
+/**
+ * O login que esta acontecendo agora, se houver.
+ *
+ * Duas janelas de login ao mesmo tempo compartilham o MESMO pote de cookies
+ * (e a graca toda da sessao padrao). A segunda abre uma nova tentativa de
+ * login no Access e atropela o estado da primeira — quem estava no meio de
+ * digitar o codigo recebe "codigo expirado". Entao so existe um de cada vez.
+ *
+ * @type {{win: import('electron').BrowserWindow, promise: Promise<any>} | null}
+ */
+let current = null
 
 function hostOf(url) {
   try {
@@ -48,7 +70,17 @@ function openCloudflareLogin(parent, bridgeUrl) {
     })
   }
 
-  return new Promise((resolve) => {
+  // Ja tem um login em andamento: traz ele para frente em vez de abrir outro.
+  if (current && current.promise && !current.win.isDestroyed()) {
+    current.win.show()
+    current.win.focus()
+    return current.promise
+  }
+
+  /** A janela desta chamada, visivel tambem depois do executor. */
+  let activeWin = null
+
+  const promise = new Promise((resolve) => {
     const win = new BrowserWindow({
       width: 480,
       height: 640,
@@ -67,6 +99,9 @@ function openCloudflareLogin(parent, bridgeUrl) {
       },
     })
 
+    activeWin = win
+    current = { win, promise: null }
+
     let settled = false
     let revealed = false
 
@@ -82,6 +117,7 @@ function openCloudflareLogin(parent, bridgeUrl) {
       settled = true
       clearTimeout(revealTimer)
       clearTimeout(deadline)
+      if (current && current.win === win) current = null
       if (!win.isDestroyed()) win.destroy()
       resolve(result)
     }
@@ -159,6 +195,11 @@ function openCloudflareLogin(parent, bridgeUrl) {
       // O `did-fail-load` ja conta a historia; aqui so evitamos rejeicao solta.
     })
   })
+
+  // `finish` pode ter rodado dentro do proprio executor; so registramos o
+  // login em andamento se ele ainda for este.
+  if (current && current.win === activeWin) current.promise = promise
+  return promise
 }
 
 module.exports = { openCloudflareLogin, LOGIN_TIMEOUT_MS }

@@ -92,6 +92,18 @@ export function DesktopGate() {
       setConfig({ bridgeUrl, sharedSecret })
       setPhase('login')
 
+      // SILENCIO NO BRIDGE ANTES DE COMECAR.
+      //
+      // O fluxo SSE das chamadas recebidas pode estar pendurado no endereco
+      // antigo e, com a sessao do Access vencida, cada tentativa dele bate no
+      // endpoint de login do Cloudflare — no MESMO pote de cookies da janela de
+      // login, porque e tudo a sessao padrao do Electron. Se isso acontece
+      // entre "me manda o codigo" e "aqui esta o codigo", o Access ja esta em
+      // outra tentativa de login e responde que o codigo expirou. Fechamos o
+      // fluxo aqui, ANTES de abrir a janela; ele volta sozinho no `setSession`
+      // la embaixo, ja com a configuracao nova.
+      resetIncomingStream()
+
       // Abre (ou reaproveita) a sessao do Cloudflare Access. Se o cookie ainda
       // estiver de pe, isso volta na hora e nenhuma janela chega a aparecer.
       const login = await api.openCloudflareLogin(bridgeUrl).catch((err: Error) => ({
@@ -126,8 +138,6 @@ export function DesktopGate() {
 
       setSecretPersisted(result.secretPersisted)
       setSaved({ bridgeUrl, sharedSecret })
-      // O fluxo de chamadas recebidas pode estar pendurado no endereco antigo.
-      resetIncomingStream()
       setSession((n) => n + 1)
       setConnected(true)
       setPanelOpen(false)
