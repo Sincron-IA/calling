@@ -11,7 +11,7 @@
  * que solta a chamada HTTP que o agente deixou pendurada no `/api/ring`.
  */
 
-import { BRIDGE_URL, SHARED_SECRET } from './bridge'
+import { bridgeUrl, sharedSecret } from './config'
 
 export interface IncomingCall {
   /** Id da chamada, gerado pelo bridge. E por ele que a acao volta. */
@@ -85,7 +85,7 @@ function ensureStream(): void {
 
   // EventSource nao aceita cabecalho: o segredo vai na query (o bridge aceita
   // os dois jeitos). E o mesmo segredo que o app ja carrega.
-  const url = `${BRIDGE_URL}/api/incoming/stream?token=${encodeURIComponent(SHARED_SECRET)}`
+  const url = `${bridgeUrl()}/api/incoming/stream?token=${encodeURIComponent(sharedSecret())}`
   // O EventSource nao aceita `credentials`: o equivalente dele e o
   // `withCredentials` do init, que manda o cookie do Access na conexao SSE.
   const es = new EventSource(url, { withCredentials: true })
@@ -113,6 +113,20 @@ function ensureStream(): void {
   }
 }
 
+/**
+ * Derruba o fluxo para ele nascer de novo com a configuracao nova.
+ *
+ * Existe por causa da tela de conexao do app de desktop: se o endereco do
+ * bridge ou a chave mudarem com o app aberto, o EventSource antigo ainda
+ * estaria pendurado no endereco velho. O proximo `subscribeIncomingCalls`
+ * reabre com o endereco certo.
+ */
+export function resetIncomingStream(): void {
+  source?.close()
+  source = null
+  setCalls([])
+}
+
 /** Assina a fila de chamadas recebidas. */
 export function subscribeIncomingCalls(listener: Listener): () => void {
   listeners.add(listener)
@@ -131,9 +145,9 @@ export function subscribeIncomingCalls(listener: Listener): () => void {
  * (timeout do servidor, outra aba) — nao e erro para mostrar na tela.
  */
 function resolveOnBridge(call: IncomingCall, action: 'approve' | 'decline' | 'answer' | 'timeout') {
-  void fetch(`${BRIDGE_URL}/api/incoming/${encodeURIComponent(call.id)}/${action}`, {
+  void fetch(`${bridgeUrl()}/api/incoming/${encodeURIComponent(call.id)}/${action}`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${SHARED_SECRET}` },
+    headers: { authorization: `Bearer ${sharedSecret()}` },
     keepalive: true,
     // Cookie do Cloudflare Access junto, como nas demais chamadas ao bridge.
     credentials: 'include',

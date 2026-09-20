@@ -531,3 +531,219 @@ body {
     box-shadow: 0 0 20px -6px color-mix(in srgb, var(--ring) 25%, transparent);
   }
 }
+
+/* ------------------------------------------------------------------------ */
+/* Tela de conexao (so no app de desktop)                                    */
+/*                                                                          */
+/* A primeira vez que o app abre: endereco do bridge, chave, e um botao que  */
+/* leva pro login do Cloudflare dentro da propria janela.                    */
+/* ------------------------------------------------------------------------ */
+
+.connect {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+/* Quando o app ja esta ligado e a tela volta pela engrenagem, ela cobre sem
+   apagar: da pra ver que a barra continua ali atras. */
+.connect-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.connect-veil .connect {
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.connect__card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.9);
+}
+
+.connect__card--status {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+
+.connect__head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-bottom: 4px;
+}
+
+.connect__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 14px -2px var(--accent);
+}
+
+.connect__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.connect__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.connect__label {
+  color: var(--muted);
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+}
+
+.connect__input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.connect__input:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.connect__input:disabled {
+  opacity: 0.55;
+}
+
+.connect__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 11px 14px;
+  background: var(--accent);
+  border: none;
+  border-radius: 10px;
+  color: #0b0d10;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.connect__button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.connect__button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.connect__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.connect__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.connect__back {
+  align-self: center;
+  margin-top: 2px;
+  padding: 4px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.connect__back:hover:not(:disabled) {
+  color: var(--text-2);
+}
+
+.connect__spinner {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.75;
+  animation: connect-spin 0.7s linear infinite;
+}
+
+@keyframes connect-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A engrenagem que reabre a tela de conexao com o app ja ligado. */
+.gear {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.gear:hover {
+  color: var(--text-2);
+  background: var(--surface-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connect__spinner {
+    animation-duration: 2.4s;
+  }
+}

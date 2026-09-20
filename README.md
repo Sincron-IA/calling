@@ -144,12 +144,39 @@ npm run typecheck   # web + server
 
 ## Desktop (Electron)
 
-Wrapper fino de proposito: e a mesma pagina web dentro de uma janela.
+A mesma pagina web dentro de uma janela — com tres coisas que o navegador nao
+consegue dar.
 
 ```bash
 npm run build       # gera web/dist
 npm run electron
 ```
+
+**1. Tela de conexao, sem editar `.env`.** Na primeira vez o app pede duas
+coisas: o *endereco do bridge* e a *chave do app* (o `CALLING_SHARED_SECRET`).
+Depois disso ele nao pergunta mais. A engrenagem no canto reabre essa tela.
+
+**2. O login do Cloudflare acontece dentro do app.** O botao "Conectar ao
+Cloudflare" abre a mesma tela de login por email de sempre, numa janela do
+proprio app, usando a **sessao padrao** do Electron. Como o cookie
+`CF_Authorization` nasce na mesma sessao que os `fetch` da barra usam — e essa
+sessao e persistente —, nao e preciso logar toda vez: so quando o proprio
+Access expirar. Se o cookie ainda valer, a janela de login nem chega a
+aparecer.
+
+**3. A chave fica cifrada.** O `electron/config-store.js` guarda
+`calling-config.json` no `userData` com o endereco em texto e a chave cifrada
+pelo `safeStorage` (Keychain / DPAPI / libsecret). Se a maquina nao tiver cofre,
+a chave **nao e gravada** — fica so na memoria da execucao e o app avisa na
+tela que vai pedir de novo. Nunca ha segredo em texto puro no disco.
+
+Detalhe de rede: sem `CALLING_APP_URL`, o app serve o `web/dist` em
+`http://localhost:5173` (so no loopback) em vez de abrir `file://`. E de
+proposito — uma pagina `file://` manda `Origin: null`, que o bridge recusa. Com
+a porta de sempre, o app de desktop tem a mesma origem que o `npm run dev`, e
+`CALLING_ALLOWED_ORIGINS` nao precisa de nenhuma linha nova. Se a porta estiver
+ocupada, o app sobe em outra e avisa no console qual origem liberar
+(`CALLING_APP_PORT` fixa outra porta).
 
 Para apontar para outro lugar (dev server ou a URL da Vercel):
 

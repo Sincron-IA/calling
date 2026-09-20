@@ -2,14 +2,11 @@
  * Cliente do bridge — o servidor que fala com os agentes de verdade.
  */
 
-export const BRIDGE_URL = (
-  import.meta.env.VITE_BRIDGE_URL || 'http://localhost:8787'
-).replace(/\/$/, '')
+import { bridgeUrl, sharedSecret } from './config'
 
-/** Mesmo segredo das outras rotas; o fluxo SSE de chamadas recebidas usa ele. */
-export const SHARED_SECRET = import.meta.env.VITE_CALLING_SHARED_SECRET || ''
-
-const SECRET = SHARED_SECRET
+// Endereco e chave sao PERGUNTADOS a cada chamada, nao congelados no import:
+// no navegador vem do `.env` (como sempre), no app de desktop vem da tela de
+// conexao. Ver `config.ts`.
 
 export interface AgentSummary {
   slug: string
@@ -25,11 +22,11 @@ export interface LiveTokenResponse {
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BRIDGE_URL}${path}`, {
+  const res = await fetch(`${bridgeUrl()}${path}`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${SECRET}`,
+      authorization: `Bearer ${sharedSecret()}`,
     },
     body: JSON.stringify(body),
     // Leva o cookie do Cloudflare Access junto; sem ele o Access barra a
@@ -45,8 +42,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function fetchAgents(): Promise<AgentSummary[]> {
-  const res = await fetch(`${BRIDGE_URL}/api/agents`, {
-    headers: { authorization: `Bearer ${SECRET}` },
+  const res = await fetch(`${bridgeUrl()}/api/agents`, {
+    headers: { authorization: `Bearer ${sharedSecret()}` },
     credentials: 'include',
   })
   if (!res.ok) throw new Error(`Nao consegui listar os agentes (${res.status})`)
@@ -72,11 +69,11 @@ export async function askAgent(input: {
 /** Avisa o bridge que a ligacao acabou, para ele descartar a sessao. */
 export function endCall(callId: string): void {
   // keepalive: costuma sair durante o unload da pagina.
-  void fetch(`${BRIDGE_URL}/api/end-call`, {
+  void fetch(`${bridgeUrl()}/api/end-call`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${SECRET}`,
+      authorization: `Bearer ${sharedSecret()}`,
     },
     body: JSON.stringify({ callId }),
     keepalive: true,
