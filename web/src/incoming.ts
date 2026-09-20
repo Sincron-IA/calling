@@ -75,6 +75,20 @@ function push(call: IncomingCall): void {
 
 let source: EventSource | null = null
 
+/** Quem quer saber que a identidade de um agente mudou. */
+const agentsListeners = new Set<() => void>()
+
+/**
+ * Avisa quando a cara de algum agente muda — do painel daqui ou do agente na
+ * VPS. Devolve a funcao de parar de ouvir.
+ */
+export function subscribeAgentsChanged(listener: () => void): () => void {
+  agentsListeners.add(listener)
+  return () => {
+    agentsListeners.delete(listener)
+  }
+}
+
 /**
  * Liga (uma vez) o fluxo do bridge. O EventSource ja reconecta sozinho quando
  * a conexao cai; no `hello` da reconexao o servidor reenvia a fila inteira,
@@ -104,6 +118,13 @@ function ensureStream(): void {
 
   es.addEventListener('ring', (event) => {
     push(JSON.parse((event as MessageEvent).data) as IncomingCall)
+  })
+
+  /* A identidade de algum agente mudou na VPS — ou porque o dono salvou pelo
+     painel, ou porque o PROPRIO agente reescreveu o arquivo dele. Vem pelo
+     mesmo fluxo das chamadas: um cano so. */
+  es.addEventListener('agents', () => {
+    agentsListeners.forEach((listener) => listener())
   })
 
   es.addEventListener('resolved', (event) => {

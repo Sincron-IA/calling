@@ -1,19 +1,28 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { findAgent, type AgentEntry } from './agents.js'
-import { buildVoiceIdentity } from './identity.js'
+import { buildTextIdentity, buildVoiceIdentity } from './identity.js'
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || '/home/massari/.local/bin/claude'
 const MODEL = process.env.CALLING_AGENT_MODEL || 'sonnet'
 const TIMEOUT_MS = Number(process.env.CALLING_AGENT_TIMEOUT_MS || 120_000)
 
 /**
- * Uma ligacao = uma sessao headless do Claude Code por agente.
+ * Uma sessao headless do Claude Code por ESCOPO e por agente.
+ *
+ * Sao dois escopos, e a diferenca entre eles e o tempo de vida:
+ *
+ *   - VOZ: o escopo e o `callId`. A sessao nasce com a ligacao e morre com ela
+ *     (`endCall`), porque uma ligacao e um assunto com comeco e fim.
+ *   - TEXTO: o escopo e o proprio agente. Nao ha "chamada" num recado escrito;
+ *     se a sessao morresse a cada mensagem, cada frase comecaria do zero e o
+ *     dono teria que recontar o contexto toda vez.
+ *
+ * Voz e texto do MESMO agente compartilham a sessao de texto — e por isso que
+ * dá para ligar continuando um assunto escrito dez minutos antes.
  *
  * O primeiro turno cria a sessao com --session-id; os seguintes continuam com
- * --resume, entao o agente lembra do que foi dito ANTES na mesma ligacao.
- * Quando a ligacao termina, a entrada e descartada (a proxima ligacao comeca
- * uma sessao nova).
+ * --resume.
  */
 interface CallSession {
   sessionId: string
@@ -25,12 +34,28 @@ interface CallSession {
 
 const sessions = new Map<string, CallSession>()
 
-function sessionKey(callId: string, agentSlug: string) {
-  return `${callId}:${agentSlug}`
+/**
+ * O escopo do recado escrito. Nao pode colidir com um `callId`, que e sempre um
+ * UUID — dai o prefixo.
+ */
+const TEXT_SCOPE = 'thread'
+
+/** Ligacao esquecida some em 1h. */
+const CALL_TTL_MS = 60 * 60 * 1000
+
+/**
+ * A conversa escrita dura o dia: e a memoria de curto prazo do agente com o
+ * dono. Passado isso, a proxima mensagem simplesmente abre uma sessao nova —
+ * sem erro, so sem o contexto de ontem.
+ */
+const TEXT_TTL_MS = 24 * 60 * 60 * 1000
+
+function sessionKey(scope: string, agentSlug: string) {
+  return `${scope}:${agentSlug}`
 }
 
-function getSession(callId: string, agentSlug: string): CallSession {
-  const key = sessionKey(callId, agentSlug)
+function getSession(scope: string, agentSlug: string): CallSession {
+  const key = sessionKey(scope, agentSlug)
   let session = sessions.get(key)
   if (!session) {
     session = {
@@ -45,18 +70,27 @@ function getSession(callId: string, agentSlug: string): CallSession {
   return session
 }
 
-/** Encerra as sessoes de uma ligacao. */
+/**
+ * Encerra as sessoes de uma ligacao.
+ *
+ * A sessao de TEXTO nao entra nisso de proposito: desligar o telefone nao apaga
+ * a conversa escrita. Ela vive no escopo `thread:`, que nunca casa com um
+ * `callId` (UUID), mas a guarda explicita fica aqui para quem vier depois nao
+ * precisar deduzir isso.
+ */
 export function endCall(callId: string) {
+  if (!callId || callId === TEXT_SCOPE) return
   for (const key of sessions.keys()) {
     if (key.startsWith(`${callId}:`)) sessions.delete(key)
   }
 }
 
-/** Limpeza preguicosa de ligacoes esquecidas (1h). */
+/** Limpeza preguicosa: cada escopo com o seu prazo. */
 function reapStaleSessions() {
-  const cutoff = Date.now() - 60 * 60 * 1000
+  const now = Date.now()
   for (const [key, session] of sessions) {
-    if (session.lastUsed < cutoff) sessions.delete(key)
+    const ttl = key.startsWith(`${TEXT_SCOPE}:`) ? TEXT_TTL_MS : CALL_TTL_MS
+    if (session.lastUsed < now - ttl) sessions.delete(key)
   }
 }
 
@@ -65,6 +99,14 @@ export interface AskAgentInput {
   message: string
   callId: string
 }
+
+export interface SendTextInput {
+  agentSlug: string
+  text: string
+}
+
+/** Teto do recado escrito. Acima disso nao e recado, e documento. */
+export const MAX_TEXT_LENGTH = 2000
 
 export interface AskAgentResult {
   reply: string
@@ -96,7 +138,41 @@ export async function askAgent(input: AskAgentInput): Promise<AskAgentResult> {
   const session = getSession(input.callId, agent.slug)
 
   // Enfileira: um turno por vez por ligacao/agente.
-  const run = session.chain.then(() => runClaude(agent, session, message))
+  const run = session.chain.then(() => runClaude(agent, session, message, 'voice'))
+  session.chain = run.catch(() => undefined)
+  return run
+}
+
+/**
+ * Recado escrito pela barra do Calling.
+ *
+ * Mesmo agente, mesmo workspace, mesma maquinaria da voz — muda o escopo da
+ * sessao (o agente, nao a ligacao) e as regras do canal.
+ */
+export async function sendText(input: SendTextInput): Promise<AskAgentResult> {
+  const agent = findAgent(input.agentSlug)
+  if (!agent) {
+    throw Object.assign(new Error(`Agente desconhecido: ${input.agentSlug}`), {
+      status: 400,
+    })
+  }
+
+  const text = input.text?.trim()
+  if (!text) {
+    throw Object.assign(new Error('Mensagem vazia'), { status: 400 })
+  }
+  if (text.length > MAX_TEXT_LENGTH) {
+    throw Object.assign(
+      new Error(`Mensagem longa demais (limite de ${MAX_TEXT_LENGTH} caracteres).`),
+      { status: 400 },
+    )
+  }
+
+  reapStaleSessions()
+  const session = getSession(TEXT_SCOPE, agent.slug)
+
+  // A mesma fila da voz: dois --resume ao mesmo tempo na mesma sessao quebram.
+  const run = session.chain.then(() => runClaude(agent, session, text, 'text'))
   session.chain = run.catch(() => undefined)
   return run
 }
@@ -105,8 +181,9 @@ function runClaude(
   agent: AgentEntry,
   session: CallSession,
   message: string,
+  channel: 'voice' | 'text',
 ): Promise<AskAgentResult> {
-  const identity = buildVoiceIdentity(agent)
+  const identity = channel === 'voice' ? buildVoiceIdentity(agent) : buildTextIdentity(agent)
   const startedAt = Date.now()
 
   const args = [

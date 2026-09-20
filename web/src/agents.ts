@@ -7,12 +7,16 @@
 import type { AgentSummary } from './bridge'
 
 /**
- * Paleta fixa da casa, na ordem em que os agentes aparecem no `agents.json`:
- * Automa, Ivo, Theo, Bravo, Flow, Vetor.
+ * Paleta de PARTIDA, na ordem em que os agentes aparecem no `agents.json`.
+ *
+ * Ela nao e mais a fonte da cor: quem decide e o bridge, lendo o arquivo de
+ * identidade no workspace do agente (com o `agents.json` por baixo). Isto aqui
+ * so cobre o agente que nao tem cor em lugar nenhum — senao ele nasceria sem
+ * cor nenhuma e todos ficariam iguais.
  */
 const AGENT_COLORS = ['#4ade80', '#60a5fa', '#c084fc', '#fbbf24', '#f472b6', '#2dd4bf']
 
-/** Cor do agente pela POSICAO dele na lista que o bridge devolve. */
+/** Cor de partida pela POSICAO na lista. Ultimo recurso, nao regra. */
 export function agentColor(index: number): string {
   return AGENT_COLORS[((index % AGENT_COLORS.length) + AGENT_COLORS.length) % AGENT_COLORS.length]
 }

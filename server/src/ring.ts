@@ -125,6 +125,17 @@ export function attachStream(res: Response): void {
   res.on('error', cleanup)
 }
 
+/**
+ * Avisa as telas abertas que a identidade de algum agente mudou.
+ *
+ * Vai pelo MESMO fluxo SSE das chamadas recebidas, com um tipo de evento novo:
+ * abrir um segundo canal significaria um segundo cookie do Access, uma segunda
+ * reconexao e um segundo jeito de quebrar.
+ */
+export function notifyAgentsChanged(): void {
+  broadcast('agents', { at: Date.now() })
+}
+
 export function streamCount(): number {
   return streams.size
 }

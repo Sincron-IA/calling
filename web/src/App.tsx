@@ -1,20 +1,42 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GeminiLiveOrbAdapter } from 'orb-ui/adapters'
-import { fetchAgents, endCall as endCallOnBridge, type AgentSummary } from './bridge'
+import {
+  fetchAgents,
+  endCall as endCallOnBridge,
+  fetchAvatar,
+  sendMessage,
+  type AgentSummary,
+} from './bridge'
 import { createCallAdapter } from './gemini'
 import { agentColor, pickPreferredAgent, registerCall } from './agents'
-import { CallingBar, type CallPhase } from './CallingBar'
+import {
+  CallingBar,
+  type CallPhase,
+  type ComposeState,
+  type ReplyBubble,
+} from './CallingBar'
 import {
   answerIncoming,
   approveIncoming,
   declineIncoming,
   dismissIncoming,
+  subscribeAgentsChanged,
   subscribeIncomingCalls,
   type DeclineCause,
   type IncomingCall,
 } from './incoming'
 
-export function App() {
+export interface AppProps {
+  /**
+   * Recado para mostrar assim que o app nasce — hoje so o "conectou" do
+   * `DesktopGate`. Ele chega por prop (e nao de dentro daqui) porque quem sabe
+   * que houve uma conexao DELIBERADA e o porteiro: a reconexao silenciosa da
+   * abertura do app nao manda nada, de proposito.
+   */
+  readyNotice?: string
+}
+
+export function App({ readyNotice = '' }: AppProps) {
   const [agents, setAgents] = useState<AgentSummary[]>([])
   // Quem esta no chip: o ultimo agente com quem se falou. Uma ligacao por vez —
   // o bridge so aguenta uma sessao de voz.
@@ -23,6 +45,18 @@ export function App() {
   const [callStartedAt, setCallStartedAt] = useState<number | null>(null)
   const [incoming, setIncoming] = useState<IncomingCall[]>([])
   const [lastReply, setLastReply] = useState('')
+  const [notice, setNotice] = useState(readyNotice)
+  // O campo de escrever e o balao. Os dois vivem SO em memoria: fechou o app,
+  // acabou — nao ha historico em disco nem em localStorage, de proposito.
+  const [compose, setCompose] = useState<ComposeState>({
+    agentSlug: '',
+    draft: '',
+    busy: false,
+  })
+  const [reply, setReply] = useState<ReplyBubble | null>(null)
+  // Imagem de cada agente, ja baixada e virada em URL local. Vazio = ele nao
+  // tem imagem, e o disco fica com a inicial.
+  const [avatars, setAvatars] = useState<Record<string, string>>({})
   const [waiting, setWaiting] = useState(false)
   const [error, setError] = useState('')
 
@@ -43,9 +77,64 @@ export function App() {
       )
   }, [])
 
+  /**
+   * As imagens dos agentes.
+   *
+   * Nao da para apontar um `<img src>` para o bridge (a rota pede o cabecalho
+   * `Authorization`), entao baixamos e viramos blob. As URLs sao NOSSAS: se
+   * nao forem soltas, cada nova lista deixa um blob preso na memoria.
+   *
+   * O `avatarVersion` (mtime do arquivo na VPS) entra na chave: quando o agente
+   * troca a propria imagem, a versao muda e a figura e buscada de novo.
+   */
+  useEffect(() => {
+    const wanted = agents.filter((agent) => (agent.avatarVersion ?? 0) > 0)
+    if (wanted.length === 0) {
+      setAvatars({})
+      return
+    }
+
+    let alive = true
+    const mine: string[] = []
+
+    void Promise.all(
+      wanted.map(async (agent) => {
+        try {
+          const url = await fetchAvatar(agent.slug, agent.avatarVersion ?? 0)
+          mine.push(url)
+          return [agent.slug, url] as const
+        } catch {
+          // Agente sem imagem servivel continua com a inicial: nao e erro.
+          return null
+        }
+      }),
+    ).then((pairs) => {
+      if (!alive) return
+      setAvatars(Object.fromEntries(pairs.filter(Boolean) as (readonly [string, string])[]))
+    })
+
+    return () => {
+      alive = false
+      mine.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [agents])
+
   // Chamadas recebidas (um agente ligando para o Luiz): chegam do bridge por
   // SSE. A fila da tela e sempre a que o servidor manda.
   useEffect(() => subscribeIncomingCalls(setIncoming), [])
+
+  /* A cara de alguem mudou na VPS: o agente reescreveu o proprio arquivo, ou o
+     painel daqui gravou. Em vez de confiar no que o app ja tem, perguntamos a
+     lista de novo — a resposta do bridge e a verdade. */
+  useEffect(
+    () =>
+      subscribeAgentsChanged(() => {
+        void fetchAgents()
+          .then(setAgents)
+          .catch(() => undefined)
+      }),
+    [],
+  )
 
   const hangUp = useCallback(async () => {
     attemptRef.current += 1
@@ -120,6 +209,48 @@ export function App() {
     return () => window.removeEventListener('pagehide', onUnload)
   }, [])
 
+  /* ------------------------------------------------ recado escrito -------- */
+
+  /** Abre o campo endereçado a um agente, sem tocar na ligacao em curso. */
+  const write = useCallback((slug: string) => {
+    setCompose({ agentSlug: slug, draft: '', busy: false })
+  }, [])
+
+  const closeCompose = useCallback(() => {
+    setCompose({ agentSlug: '', draft: '', busy: false })
+  }, [])
+
+  /**
+   * Manda o recado.
+   *
+   * Erro NAO come o rascunho: o texto continua no campo para uma segunda
+   * tentativa. Resposta boa limpa o campo e deixa ele aberto — quem escreveu
+   * uma vez costuma escrever de novo.
+   */
+  const sendCompose = useCallback(async () => {
+    const slug = compose.agentSlug
+    const text = compose.draft.trim()
+    if (!slug || !text || compose.busy) return
+
+    setCompose((state) => ({ ...state, busy: true }))
+    try {
+      const answer = await sendMessage(slug, text)
+      setReply({ agentSlug: slug, text: answer })
+      setCompose((state) =>
+        // Trocou de agente no meio do caminho: o rascunho novo e dele, nao
+        // deste envio — nao apagamos nada.
+        state.agentSlug === slug ? { ...state, draft: '', busy: false } : state,
+      )
+    } catch (err) {
+      setReply({
+        agentSlug: slug,
+        text: err instanceof Error ? err.message : 'Nao consegui falar com o bridge.',
+        isError: true,
+      })
+      setCompose((state) => ({ ...state, busy: false }))
+    }
+  }, [compose.agentSlug, compose.draft, compose.busy])
+
   /* ------------------------------------------ chamadas recebidas ---------- */
 
   /** Resolve o item na hora, sem abrir voz nenhuma. */
@@ -151,8 +282,11 @@ export function App() {
     dismissIncoming(incomingCall.id)
   }, [])
 
-  // A cor pode vir do `agents.json` (assim um agente novo nao depende de
-  // codigo); sem ela, cai na paleta fixa pela posicao na lista.
+  /**
+   * A cor vem do BRIDGE — que a leu do arquivo de identidade do agente, com o
+   * `agents.json` por baixo. A paleta local so cobre quem nao tem cor em lugar
+   * nenhum; ela nao decide mais nada.
+   */
   const colorOf = useCallback(
     (slug: string) => {
       const index = agents.findIndex((a) => a.slug === slug)
@@ -160,6 +294,8 @@ export function App() {
     },
     [agents],
   )
+
+  const avatarOf = useCallback((slug: string) => avatars[slug] ?? '', [avatars])
 
   const currentName = useMemo(
     () => agents.find((a) => a.slug === current)?.name ?? '',
@@ -188,6 +324,7 @@ export function App() {
       <CallingBar
         agents={agents}
         colorOf={colorOf}
+        avatarOf={avatarOf}
         currentSlug={current}
         phase={phase}
         callStartedAt={callStartedAt}
@@ -197,6 +334,16 @@ export function App() {
         onApprove={onApprove}
         onAnswer={onAnswer}
         onDecline={onDecline}
+        notice={notice}
+        onNoticeDone={() => setNotice('')}
+        onWrite={write}
+        onAgentsUpdated={setAgents}
+        compose={compose}
+        onDraftChange={(draft) => setCompose((state) => ({ ...state, draft }))}
+        onSendMessage={() => void sendCompose()}
+        onCloseCompose={closeCompose}
+        reply={reply}
+        onReplyDone={() => setReply(null)}
       />
     </main>
   )

@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { agentIdentity } from './identity-file.js'
 
 export interface AgentEntry {
   slug: string
@@ -71,7 +72,22 @@ export function findAgent(slug: string): AgentEntry | undefined {
   return loadAgents().find((a) => a.slug === slug)
 }
 
-/** Lista enxuta para a UI — sem expor caminhos do servidor. */
+/**
+ * Lista enxuta para a UI — sem expor caminhos do servidor.
+ *
+ * Nome e cor saem da IDENTIDADE (o arquivo no workspace do agente), com o
+ * `agents.json` como valor de partida. `avatarVersion` e o mtime da imagem: e
+ * o que impede a UI de ficar com a figura velha em cache depois que o agente
+ * troca a propria cara. Zero = sem imagem.
+ */
 export function publicAgentList() {
-  return loadAgents().map(({ slug, name, color }) => ({ slug, name, color }))
+  return loadAgents().map((agent) => {
+    const identity = agentIdentity(agent)
+    return {
+      slug: agent.slug,
+      name: identity.name,
+      color: identity.color,
+      avatarVersion: identity.avatarVersion,
+    }
+  })
 }

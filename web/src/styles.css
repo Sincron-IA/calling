@@ -85,6 +85,11 @@ body {
 
 /* Ancorada no canto de baixo a direita; cresce para cima. */
 .bar {
+  /* Largura de tudo o que abre acima do chip — menu, recado, e o que vier.
+     Uma so, para a janela (que tem o tamanho do conteudo) nao mudar de largura
+     conforme o que esta aberto. */
+  --rail: 240px;
+
   position: fixed;
   right: 24px;
   bottom: 28px;
@@ -95,7 +100,7 @@ body {
   gap: 8px;
 }
 
-/* Disco de agente: inicial + borda na cor dele. */
+/* Disco de agente: a IMAGEM dele quando ha uma, a inicial quando nao. */
 .disc {
   width: var(--disc-size);
   height: var(--disc-size);
@@ -285,12 +290,462 @@ body {
   opacity: 1;
 }
 
-/* Menu dos outros agentes, aberto pelo chevron. */
+/* Recado curto acima da barra: "conectou", e o que mais vier depois.
+
+   Ele SAI sozinho, entao e um botao de proposito — clicar fecha na hora, sem
+   esperar o relogio. Largura limitada a do menu: ele mora na mesma coluna e
+   nao pode ser o que define a largura da janela. */
+.notice {
+  max-width: var(--rail);
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.9);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: notice-in 0.2s ease;
+}
+
+.notice:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.notice__dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+@keyframes notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+/* O painel de aparencia do agente                                           */
+/*                                                                          */
+/* Mesmo material do painel de conexao: um cartao na coluna, nunca uma tela  */
+/* cheia. Ele escreve no MESMO arquivo que o agente escreve quando muda a si */
+/* mesmo — ver `server/src/identity-file.ts`.                                */
+/* ------------------------------------------------------------------------ */
+.panel {
+  width: var(--rail);
+  padding: 11px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 20px 44px -22px rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: notice-in 0.2s ease;
+}
+
+.panel__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel__who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.panel__title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel__slug {
+  font-size: 0.62rem;
+  color: var(--muted);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field__label {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.field__input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.field__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.field__input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.field__input--hex {
+  width: 78px;
+  margin-left: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+/* O anel usa `currentColor`, que e a propria cor da bolinha: um seletor so
+   serve para as seis. */
+.swatch.is-on {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px currentColor;
+}
+
+.swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.drop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+
+.drop__hint {
+  flex: 1 1 100%;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.panel__error {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: var(--danger);
+}
+
+.panel__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.btn--go {
+  background: rgba(74, 222, 128, 0.16);
+  border-color: rgba(74, 222, 128, 0.42);
+  color: var(--accent);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------------ */
+/* O balao da resposta                                                       */
+/*                                                                          */
+/* UM so, sempre com a ULTIMA resposta (ou o ultimo erro). Sem historico e   */
+/* sem rolagem: a conversa completa nao aparece no Calling — ela vive na     */
+/* sessao do agente. Isso e ESCOLHA, nao falta; ver docs/sincron/DECISIONS.  */
+/* ------------------------------------------------------------------------ */
+.bubble {
+  max-width: 280px;
+  padding: 8px 12px 9px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--bubble-color, var(--accent));
+  border-radius: 12px 12px 12px 4px;
+  background: var(--surface);
+  box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.9);
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  animation: notice-in 0.2s ease;
+}
+
+.bubble:hover {
+  background: var(--surface-hover);
+}
+
+.bubble--error {
+  border-left-color: var(--danger);
+}
+
+.bubble__who {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bubble-color, var(--accent));
+}
+
+.bubble--error .bubble__who {
+  color: var(--danger);
+}
+
+/* Seis linhas e o teto: passou disso, o balao vira parede de texto e a janela
+   do app cresce junto com ela. */
+.bubble__text {
+  font-size: 0.79rem;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------------ */
+/* O campo de escrever                                                       */
+/* ------------------------------------------------------------------------ */
+.compose {
+  width: var(--rail);
+  padding: 7px 8px 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  animation: notice-in 0.2s ease;
+}
+
+.compose__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.compose__to {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* O `i` que guarda o lembrete das teclas. Discreto parado, aceso quando
+   alguem chega nele — a mesma regra da engrenagem. */
+.compose__hint {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.56rem;
+  font-style: italic;
+  font-weight: 600;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+}
+
+.compose__hint.is-open,
+.compose__hint:hover {
+  color: var(--text-2);
+  border-color: var(--muted);
+}
+
+/* ESTA LINHA VIVE SEMPRE NO LAYOUT, mesmo vazia. Ela mostra o lembrete das
+   teclas (no hover do `i`) ou o "esta pensando" — e se entrasse e saisse do
+   fluxo, a janela, que tem o tamanho do conteudo, pularia a cada passada do
+   mouse. */
+.compose__line {
+  min-height: 12px;
+  font-size: 0.62rem;
+  line-height: 12px;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+.compose__line.is-open {
+  opacity: 1;
+}
+
+.compose__field {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.compose__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 96px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  resize: none;
+  overflow-y: auto;
+}
+
+.compose__text:focus {
+  outline: none;
+}
+
+.compose__text::placeholder {
+  color: var(--muted);
+}
+
+.compose__text:disabled {
+  color: var(--muted);
+}
+
+.compose__send {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #0b0d10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.compose__send:disabled {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  cursor: default;
+}
+
+/* Tres pontos enquanto o agente pensa: seis segundos de silencio sem sinal
+   nenhum parecem travamento. */
+.thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.thinking i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: thinking 1.2s ease-in-out infinite;
+}
+
+.thinking i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.thinking i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes thinking {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Menu dos outros agentes, aberto pelo chevron.
+
+   EM FLUXO, de proposito: ele e irmao do chip dentro de `.bar` (que ja e uma
+   coluna alinhada a direita) e NAO e posicionado. Ver o comentario em
+   `CallingBar.tsx` — na janela do app, o que e absoluto nao faz a janela
+   crescer, e acaba pintado fora dela. */
 .menu {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  right: 0;
-  width: 150px;
+  width: var(--rail);
   padding: 6px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -301,24 +756,84 @@ body {
   gap: 2px;
 }
 
+/* A linha nao e mais um botao: ela SEGURA dois. Ver o comentario no
+   `CallingBar.tsx` — escrever nao pode virar o clique padrao de quem so queria
+   ligar. */
 .menu__row {
   display: flex;
   align-items: center;
   gap: 9px;
   width: 100%;
-  padding: 7px 8px;
-  border: 0;
+  padding: 5px 6px 5px 8px;
   border-radius: 7px;
   background: transparent;
   color: var(--text);
-  font: inherit;
   font-size: 0.78rem;
-  text-align: left;
+}
+
+.menu__row:hover,
+.menu__row:focus-within {
+  background: #1b2128;
+}
+
+.menu__row.is-current {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Nome longo corta aqui dentro: ele nao pode empurrar a largura da coluna
+   (que e a largura da janela). */
+.menu__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu__tag {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.menu__acts {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.menu__act {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
 }
 
-.menu__row:hover {
-  background: #1b2128;
+.menu__act:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* Com imagem, o fundo e o recorte mudam — a borda na cor do agente fica. */
+.disc--photo {
+  background: var(--surface);
+  overflow: hidden;
+  padding: 0;
+}
+
+.disc__img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
 }
 
 .menu__dot {
@@ -485,7 +1000,11 @@ body {
 
 .chip__avatar:focus-visible,
 .chip__chevron:focus-visible,
-.menu__row:focus-visible,
+.menu__act:focus-visible,
+.bubble:focus-visible,
+.notice:focus-visible,
+.compose__send:focus-visible,
+.compose__hint:focus-visible,
 .pill:focus-visible,
 .round:focus-visible,
 .stack:focus-visible {
@@ -785,7 +1304,7 @@ body {
 
 .shell {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
 }
 
@@ -855,6 +1374,19 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .connect__spinner {
     animation-duration: 2.4s;
+  }
+
+  /* Recado, balao e campo continuam entrando e saindo — so sem o deslize. */
+  .notice,
+  .bubble,
+  .compose,
+  .panel {
+    animation: none;
+  }
+
+  .thinking i {
+    animation: none;
+    opacity: 0.7;
   }
 
   /* A engrenagem continua aparecendo e sumindo — so que sem o pulinho. */
@@ -929,6 +1461,51 @@ body.desktop-main #root {
 /* O conteudo continua clicavel: so a faixa arrasta. */
 body.desktop-main #root > * {
   -webkit-app-region: no-drag;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Por onde se pega a janela                                                 */
+/*                                                                          */
+/* A faixa de 8px acima e alca de menos: 8 pixels em volta de um chip de     */
+/* 42px e um alvo que o mouse nao acerta. Entao o FUNDO do chip tambem       */
+/* arrasta — ele e a maior superficie da barra e nao faz nada quando         */
+/* clicado. As tres barrinhas da onda vao junto, pelo mesmo motivo.          */
+/*                                                                          */
+/* Tudo o que responde a clique volta a ser `no-drag`, um por um: no         */
+/* Windows, `drag` no pai engole o clique do filho se ninguem o devolver.    */
+/* ------------------------------------------------------------------------ */
+
+body.desktop-main .chip {
+  -webkit-app-region: drag;
+  cursor: move;
+}
+
+body.desktop-main .chip__reveal,
+body.desktop-main .notice,
+body.desktop-main .bubble,
+body.desktop-main .compose,
+body.desktop-main .panel,
+body.desktop-main .menu,
+body.desktop-main .gear,
+body.desktop-main .incoming,
+body.desktop-main .stack,
+body.desktop-main .stack__list {
+  -webkit-app-region: no-drag;
+}
+
+/* O cursor de mover nao pode vazar para dentro do que e botao. */
+body.desktop-main .chip__avatar,
+body.desktop-main .chip__chevron {
+  cursor: pointer;
+}
+
+/* A engrenagem fica na altura do CHIP, nao no meio da coluna: com o menu (ou
+   o cartao de chamada) aberto, a coluna fica alta e `align-items: flex-end`
+   deixaria a engrenagem colada embaixo. Os 6px sao a metade da diferenca
+   entre a altura do chip (42px: 6 + 28 + 6 + 2 de borda) e a da engrenagem
+   (30px) — e o que a centraliza nele. */
+body.desktop-main .gear {
+  margin-bottom: 6px;
 }
 
 /* A tela de conexao deixa de ser TELA: ela e a janela. */

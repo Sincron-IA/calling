@@ -1,7 +1,15 @@
 import express from 'express'
 import type { NextFunction, Request, Response } from 'express'
 import cors from 'cors'
-import { publicAgentList, findAgent } from './agents.js'
+import { extname } from 'node:path'
+import { publicAgentList, findAgent, loadAgents } from './agents.js'
+import {
+  AVATAR_EXTENSIONS,
+  agentIdentity,
+  avatarPath,
+  writeIdentity,
+} from './identity-file.js'
+import { MAX_AVATAR_BYTES, prepareAvatar } from './avatar.js'
 import { logEvent, logDestination } from './logger.js'
 import { buildAllowlist } from './origins.js'
 import {
@@ -11,12 +19,14 @@ import {
   requireAgentToken,
   requireSecret,
 } from './auth.js'
-import { askAgent, endCall } from './claude.js'
+import { askAgent, endCall, sendText } from './claude.js'
 import { createLiveToken } from './gemini.js'
+import { echoToThread } from './telegram.js'
 import {
   attachStream,
   finish,
   listPending,
+  notifyAgentsChanged,
   ring,
   RING_TIMEOUT_MS,
   streamCount,
@@ -108,7 +118,24 @@ app.use(
     credentials: true,
   }),
 )
-app.use(express.json({ limit: '128kb' }))
+/*
+ * Duas medidas de JSON, e nao uma so.
+ *
+ * O teto de 128 kb protege todas as rotas — nenhuma delas precisa de mais que
+ * isso. A excecao e a gravacao de identidade, que leva a IMAGEM do agente no
+ * mesmo corpo, de proposito: nome, cor e figura sao UMA mudanca, e mandar a
+ * figura por fora abriria a porta para metade dela ficar gravada.
+ *
+ * Base64 engorda o binario em cerca de um terco, entao o teto aqui e o da
+ * imagem (512 kb) com folga.
+ */
+const jsonNormal = express.json({ limit: '128kb' })
+const jsonWithImage = express.json({ limit: '1mb' })
+
+app.use((req, res, next) => {
+  const parse = req.path.endsWith('/identity') ? jsonWithImage : jsonNormal
+  parse(req, res, next)
+})
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true })
@@ -119,6 +146,95 @@ app.get('/api/agents', requireSecret, (_req, res) => {
 })
 
 /** Token efemero da Gemini Live, ja com a config da sessao daquele agente. */
+/**
+ * A imagem do agente.
+ *
+ * Rota propria porque o binario nao pode viajar dentro do JSON da lista. Vem
+ * com `nosniff` e com um tipo da allowlist: o que volta daqui e figura, e o
+ * navegador nao pode ser convencido do contrario.
+ */
+app.get('/api/agents/:slug/avatar', requireSecret, (req, res) => {
+  const agent = findAgent(String(req.params.slug || ''))
+  if (!agent) {
+    res.status(400).json({ error: 'Agente desconhecido.' })
+    return
+  }
+
+  const file = avatarPath(agent)
+  if (!file) {
+    res.status(404).json({ error: 'Esse agente nao tem imagem.' })
+    return
+  }
+
+  const type = AVATAR_EXTENSIONS[extname(file).toLowerCase()]
+  if (!type) {
+    res.status(404).json({ error: 'Esse agente nao tem imagem.' })
+    return
+  }
+
+  res.setHeader('content-type', type)
+  res.setHeader('x-content-type-options', 'nosniff')
+  // O mtime ja viaja como `?v=` na URL; o cache do navegador pode confiar nela.
+  res.setHeader('cache-control', 'private, max-age=300')
+  res.sendFile(file)
+})
+
+/**
+ * Grava a identidade de um agente: nome, cor e imagem, de uma vez.
+ *
+ * De uma vez de proposito — os tres sao UMA mudanca. Salvar duas vezes seguidas
+ * nao pode deixar o nome novo com a cor velha.
+ *
+ * O `slug` nao esta no corpo: ele e a chave estavel do agente e nao se muda por
+ * aqui. E cada agente so alcanca o proprio arquivo, porque o caminho sai do
+ * `workspace` da allowlist, nunca de algo que o cliente mandou.
+ */
+app.put('/api/agents/:slug/identity', requireSecret, (req, res) => {
+  const slug = String(req.params.slug || '')
+  const agent = findAgent(slug)
+  if (!agent) {
+    res.status(400).json({ error: 'Agente desconhecido.' })
+    return
+  }
+
+  const { name, color, avatar } = req.body ?? {}
+  if (typeof name !== 'string' || typeof color !== 'string') {
+    res.status(400).json({ error: 'Parametros invalidos.' })
+    return
+  }
+
+  try {
+    let patch: Parameters<typeof writeIdentity>[1]['avatar']
+    if (avatar === null) {
+      patch = null
+    } else if (typeof avatar === 'string' && avatar) {
+      // Data URL ou base64 puro: o que vale sao os BYTES, nunca o rotulo que
+      // veio junto (`prepareAvatar` confere a assinatura).
+      const base64 = avatar.includes(',') ? avatar.slice(avatar.indexOf(',') + 1) : avatar
+      const buf = Buffer.from(base64, 'base64')
+      const ready = prepareAvatar(buf)
+      patch = { data: ready.data, ext: ready.ext }
+    }
+
+    writeIdentity(agent, { name, color, avatar: patch })
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500
+    logEvent(
+      'error',
+      'identity_failed',
+      { agent: slug, status, error: (err as Error).message },
+      `identidade de ${slug} nao foi gravada: ${(err as Error).message}`,
+    )
+    res.status(status).json({ error: (err as Error).message })
+    return
+  }
+
+  // Sem o tamanho da imagem no log, e sem o conteudo dela em lugar nenhum.
+  logEvent('info', 'identity_saved', { agent: slug }, `identidade de ${slug} gravada`)
+  notifyAgentsChanged()
+  res.json({ agents: publicAgentList() })
+})
+
 app.post('/api/gemini-live-token', requireSecret, async (req, res) => {
   const slug = String(req.body?.agent || '')
   const agent = findAgent(slug)
@@ -184,6 +300,49 @@ app.post('/api/ask', requireSecret, async (req, res) => {
       'ask_failed',
       { agent, callId, status, error: (err as Error).message },
       `ask_agent falhou: ${(err as Error).message}`,
+    )
+    res.status(status).json({ error: (err as Error).message })
+  }
+})
+
+/**
+ * Recado escrito para um agente.
+ *
+ * Nao e `/api/ask`: aquele e a tool do caminho de VOZ e amarra a sessao ao
+ * `callId` da ligacao. Aqui a sessao e do AGENTE e sobrevive entre mensagens,
+ * senao cada frase comecaria do zero.
+ *
+ * Como em `/api/ask`, nem o texto do dono nem a resposta entram no log.
+ */
+app.post('/api/message', requireSecret, async (req, res) => {
+  const { agent, text } = req.body ?? {}
+
+  if (typeof agent !== 'string' || typeof text !== 'string') {
+    res.status(400).json({ error: 'Parametros invalidos.' })
+    return
+  }
+
+  // O eco sai ANTES de o agente pensar: quem le a thread fica sabendo do
+  // pedido na hora, nao seis segundos depois. Nao esperamos por ele — Telegram
+  // lento ou fora do ar nao pode atrasar a resposta ao dono.
+  void echoToThread(agent, text)
+
+  try {
+    const result = await sendText({ agentSlug: agent, text })
+    logEvent(
+      'info',
+      'message_answered',
+      { agent, durationMs: result.durationMs },
+      `${agent} respondeu um recado em ${result.durationMs}ms`,
+    )
+    res.json({ reply: result.reply })
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500
+    logEvent(
+      'error',
+      'message_failed',
+      { agent, status, error: (err as Error).message },
+      `mensagem falhou: ${(err as Error).message}`,
     )
     res.status(status).json({ error: (err as Error).message })
   }
@@ -264,6 +423,43 @@ app.post('/api/ring', requireAgentToken, async (req, res) => {
  * escuta em 127.0.0.1 e nao loga URL; quem chega de fora passa antes pelo
  * Cloudflare Access.
  */
+/*
+ * O AGENTE MUDOU A SI MESMO.
+ *
+ * A outra direcao da US-009: ninguem chama rota nenhuma: o agente reescreve o
+ * proprio `calling-identity.json` (ele tem permissao ali) e o bridge precisa
+ * perceber.
+ *
+ * Por que uma volta de relogio, e nao `fs.watch`: sao seis arquivos minusculos,
+ * e uma leitura a cada tres segundos custa menos do que manter um observador
+ * por workspace vivo e correto em todo sistema de arquivos (o `fs.watch` erra
+ * feio em rede e em bind mount). A assinatura e o que a UI veria; se ela nao
+ * mudou, ninguem e acordado.
+ */
+const IDENTITY_POLL_MS = 3000
+let identitySignature = ''
+
+function identityFingerprint(): string {
+  return loadAgents()
+    .map((agent) => {
+      const identity = agentIdentity(agent)
+      return `${agent.slug}|${identity.name}|${identity.color ?? ''}|${identity.avatarVersion}`
+    })
+    .join('\n')
+}
+
+identitySignature = identityFingerprint()
+
+setInterval(() => {
+  // Ninguem olhando: nao ha a quem avisar, e o disco agradece.
+  if (streamCount() === 0) return
+  const next = identityFingerprint()
+  if (next === identitySignature) return
+  identitySignature = next
+  logEvent('info', 'identity_changed', {}, 'a identidade de algum agente mudou na VPS')
+  notifyAgentsChanged()
+}, IDENTITY_POLL_MS).unref()
+
 app.get('/api/incoming/stream', (req, res) => {
   const token = bearerOf(req) || String(req.query.token || '')
   if (!isSharedSecret(token)) {

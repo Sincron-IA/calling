@@ -11,8 +11,17 @@ import { bridgeUrl, sharedSecret } from './config'
 export interface AgentSummary {
   slug: string
   name: string
-  /** Cor vinda do `agents.json` — opcional; sem ela a UI usa a paleta padrao. */
+  /**
+   * Cor que o BRIDGE decidiu: o arquivo de identidade do agente, com o
+   * `agents.json` como valor de partida. Sem nenhum dos dois, a UI cai na
+   * paleta fixa.
+   */
   color?: string
+  /**
+   * Quando a imagem do agente mudou (mtime em ms). Zero ou ausente = ele nao
+   * tem imagem e o avatar continua sendo a inicial.
+   */
+  avatarVersion?: number
 }
 
 export interface LiveTokenResponse {
@@ -54,6 +63,84 @@ export async function fetchAgents(): Promise<AgentSummary[]> {
 /** Pede ao bridge um token efemero da Gemini Live, ja com a config da sessao. */
 export function createLiveToken(agentSlug: string): Promise<LiveTokenResponse> {
   return post<LiveTokenResponse>('/api/gemini-live-token', { agent: agentSlug })
+}
+
+/** O mesmo teto do bridge — recusar aqui evita subir 2 MB para levar 413. */
+export const MAX_AVATAR_BYTES = 512 * 1024
+
+export interface IdentityInput {
+  name: string
+  color: string
+  /**
+   * Data URL com a imagem nova, `null` para remover, `undefined` para deixar a
+   * que ja esta la.
+   */
+  avatar?: string | null
+}
+
+/**
+ * Grava nome, cor e imagem de um agente — os tres de uma vez.
+ *
+ * A imagem viaja NO MESMO corpo de proposito: e uma mudanca so, e mandar a
+ * figura por fora abriria a porta para metade dela ficar gravada. Devolve a
+ * lista ja atualizada, para a UI nao ter que perguntar de novo.
+ */
+export async function saveIdentity(
+  agentSlug: string,
+  input: IdentityInput,
+): Promise<AgentSummary[]> {
+  const res = await fetch(
+    `${bridgeUrl()}/api/agents/${encodeURIComponent(agentSlug)}/identity`,
+    {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${sharedSecret()}`,
+      },
+      body: JSON.stringify(input),
+      credentials: 'include',
+    },
+  )
+
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}) as { error?: string })
+    throw new Error(detail.error || `Bridge respondeu ${res.status}`)
+  }
+
+  const data = (await res.json()) as { agents: AgentSummary[] }
+  return data.agents
+}
+
+/**
+ * Baixa a imagem de um agente e devolve uma URL local para o `<img>`.
+ *
+ * Nao da para apontar o `src` direto para o bridge: a rota exige o cabecalho
+ * `Authorization`, que uma tag `<img>` nao sabe mandar. Entao buscamos com
+ * `fetch` (que leva a chave e o cookie do Access) e viramos um blob.
+ *
+ * Quem chama e dono da URL: precisa soltar com `URL.revokeObjectURL`.
+ */
+export async function fetchAvatar(agentSlug: string, version: number): Promise<string> {
+  const res = await fetch(
+    `${bridgeUrl()}/api/agents/${encodeURIComponent(agentSlug)}/avatar?v=${version}`,
+    {
+      headers: { authorization: `Bearer ${sharedSecret()}` },
+      credentials: 'include',
+    },
+  )
+  if (!res.ok) throw new Error(`Sem imagem para ${agentSlug} (${res.status})`)
+  return URL.createObjectURL(await res.blob())
+}
+
+/**
+ * Recado escrito para um agente.
+ *
+ * Rota propria, nao a `/api/ask`: aquela e do caminho de voz e amarra a sessao
+ * ao `callId` da ligacao. Aqui a sessao e do agente e dura entre mensagens.
+ */
+export async function sendMessage(agentSlug: string, text: string): Promise<string> {
+  const data = await post<{ reply: string }>('/api/message', { agent: agentSlug, text })
+  return data.reply
 }
 
 /** Implementacao remota da tool ask_agent. */

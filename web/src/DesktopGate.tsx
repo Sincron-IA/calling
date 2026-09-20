@@ -44,6 +44,10 @@ export function DesktopGate() {
   // Muda a cada conexao bem-sucedida: forca o App a nascer de novo lendo a
   // configuracao nova (lista de agentes, fluxo de chamadas recebidas).
   const [session, setSession] = useState(0)
+  // Recado do "conectou". So a conexao pelo BOTAO o preenche: a reconexao
+  // silenciosa da abertura do app (cookie ainda valendo) nao avisa nada, senao
+  // viraria ruido toda manha.
+  const [readyNotice, setReadyNotice] = useState('')
   // A barra encostou na borda direita da tela? Entao a engrenagem desce.
   const [rightEdge, setRightEdge] = useState(false)
   const gearRef = useRef<HTMLButtonElement>(null)
@@ -185,13 +189,16 @@ export function DesktopGate() {
       }
 
       setPhase('validating')
+      let list: Awaited<ReturnType<typeof fetchAgents>>
       try {
-        await fetchAgents()
+        list = await fetchAgents()
       } catch {
         setError(GENERIC_ERROR)
         setPhase('form')
         return
       }
+
+      setReadyNotice(readyMessage(list.length))
 
       const result = await api
         .saveConfig({ bridgeUrl, sharedSecret })
@@ -248,7 +255,7 @@ export function DesktopGate() {
    */
   return (
     <div className={`shell${rightEdge ? ' shell--stacked' : ''}`}>
-      <App key={session} />
+      <App key={session} readyNotice={readyNotice} />
 
       <button
         ref={gearRef}
@@ -262,6 +269,17 @@ export function DesktopGate() {
       </button>
     </div>
   )
+}
+
+/**
+ * O texto do "conectou". Diz o NUMERO que veio do bridge: se ele responder com
+ * zero agentes, o recado fala isso em vez de inventar uma lista cheia e deixar
+ * o Luiz descobrir sozinho na hora de ligar.
+ */
+function readyMessage(count: number): string {
+  if (count === 0) return 'Conectado, mas nenhum agente disponível.'
+  if (count === 1) return 'Pronto. 1 agente na linha.'
+  return `Pronto. ${count} agentes na linha.`
 }
 
 function GearIcon() {

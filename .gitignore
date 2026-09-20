@@ -22,3 +22,6 @@ electron/dist/
 npm-debug.log*
 .DS_Store
 .vercel
+
+# runtime do /sincron-auto (state, current-story, review)
+.sincron-auto/
