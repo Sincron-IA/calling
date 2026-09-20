@@ -550,17 +550,67 @@ body {
   background: var(--bg);
 }
 
-/* Quando o app ja esta ligado e a tela volta pela engrenagem, ela cobre sem
-   apagar: da pra ver que a barra continua ali atras. */
-.connect-veil {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
+/* Com o app ja ligado, a configuracao nao volta como tela cheia: ela abre no
+   painel da engrenagem, uma janela sem moldura do tamanho de um menu. Ali o
+   cartao E a janela inteira. */
+.connect--panel {
+  position: static;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
 }
 
-.connect-veil .connect {
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(3px);
+/* Altura livre de proposito: e o cartao que diz o tamanho da janela do painel
+   (o `ConfigPanel` mede e o processo principal reposiciona). */
+.connect--panel .connect__card {
+  max-width: none;
+  padding: 18px 18px 14px;
+  gap: 12px;
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+/* Sem moldura de sistema, o cabecalho e a unica alca para arrastar o painel. */
+.connect--panel .connect__head {
+  justify-content: flex-start;
+  -webkit-app-region: drag;
+}
+
+.connect__state {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.connect__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.connect__link {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.connect__link:hover {
+  color: var(--text-2);
+}
+
+.connect__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .connect__card {
@@ -715,7 +765,7 @@ body {
   }
 }
 
-/* A engrenagem que reabre a tela de conexao com o app ja ligado. */
+/* A engrenagem que abre o painel de conexao com o app ja ligado. */
 .gear {
   position: fixed;
   top: 14px;

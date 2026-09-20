@@ -8,6 +8,9 @@
  *   3. voltou do login     -> "Conectando…" enquanto conferimos com o bridge
  *   4. deu certo           -> o app de sempre, com a barra do Calling
  *
+ * Depois disso a configuracao nao volta mais como tela cheia: a engrenagem no
+ * canto abre o painel compacto (`ConfigPanel`, numa janela sem moldura).
+ *
  * Nas vezes seguintes o passo 1 nem aparece: a configuracao esta salva e o
  * cookie do Cloudflare continua na sessao do Electron, entao o app confere em
  * silencio e cai direto no passo 4. So se a sessao do Access tiver expirado e
@@ -17,7 +20,7 @@
  * `window.callingDesktop` esta presente.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { App } from './App'
 import { ConnectScreen, ConnectingCard, type ConnectPhase } from './ConnectScreen'
 import { fetchAgents } from './bridge'
@@ -34,7 +37,6 @@ export function DesktopGate() {
 
   const [phase, setPhase] = useState<Phase>('boot')
   const [connected, setConnected] = useState(false)
-  const [panelOpen, setPanelOpen] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [secretPersisted, setSecretPersisted] = useState(true)
@@ -42,6 +44,7 @@ export function DesktopGate() {
   // Muda a cada conexao bem-sucedida: forca o App a nascer de novo lendo a
   // configuracao nova (lista de agentes, fluxo de chamadas recebidas).
   const [session, setSession] = useState(0)
+  const gearRef = useRef<HTMLButtonElement>(null)
 
   /* --------------------------------------------------- abertura do app ---- */
 
@@ -70,7 +73,6 @@ export function DesktopGate() {
         await fetchAgents()
         if (!alive) return
         setConnected(true)
-        setPanelOpen(false)
       } catch {
         if (!alive) return
         setNotice('A sessão do Cloudflare expirou. É só conectar de novo.')
@@ -140,16 +142,29 @@ export function DesktopGate() {
       setSaved({ bridgeUrl, sharedSecret })
       setSession((n) => n + 1)
       setConnected(true)
-      setPanelOpen(false)
       setPhase('form')
     },
     [api],
   )
 
+  /* -------------------------------------------------- painel da engrenagem */
+
+  /**
+   * A engrenagem manda o proprio retangulo junto: e a ancora do painel. Quem
+   * decide se ele desce ou sobe e o processo principal, olhando o espaco que
+   * sobra na tela (no Windows, com a barra de tarefas embaixo, ele sobe).
+   */
+  const openConfigPanel = useCallback(() => {
+    const rect = gearRef.current?.getBoundingClientRect()
+    void api.openConfigPanel(
+      rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null,
+    )
+  }, [api])
+
   /* ------------------------------------------------------------ desenho -- */
 
-  const card =
-    phase === 'boot' ? (
+  if (!connected) {
+    return phase === 'boot' ? (
       <ConnectingCard />
     ) : (
       <ConnectScreen
@@ -160,38 +175,24 @@ export function DesktopGate() {
         notice={notice}
         secretPersisted={secretPersisted}
         onConnect={(url, secret) => void connect(url, secret)}
-        onCancel={
-          connected
-            ? () => {
-                setPanelOpen(false)
-                setError('')
-                setNotice('')
-              }
-            : undefined
-        }
       />
     )
+  }
 
   return (
     <>
-      {connected && <App key={session} />}
+      <App key={session} />
 
-      {connected && !panelOpen && (
-        <button
-          className="gear"
-          type="button"
-          title="Conexão"
-          aria-label="Conexão"
-          onClick={() => {
-            setPhase('form')
-            setPanelOpen(true)
-          }}
-        >
-          <GearIcon />
-        </button>
-      )}
-
-      {panelOpen && (connected ? <div className="connect-veil">{card}</div> : card)}
+      <button
+        ref={gearRef}
+        className="gear"
+        type="button"
+        title="Conexão"
+        aria-label="Conexão"
+        onClick={openConfigPanel}
+      >
+        <GearIcon />
+      </button>
     </>
   )
 }

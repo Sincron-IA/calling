@@ -37,6 +37,28 @@ export interface CallingDesktopApi {
   clearConfig(): Promise<void>
   /** Abre a janela de login do Cloudflare Access e espera ela terminar. */
   openCloudflareLogin(bridgeUrl: string): Promise<LoginResult>
+  /**
+   * Abre o painel de configuracao. O retangulo e o da engrenagem, em
+   * coordenadas da pagina — o processo principal traduz para a tela e decide
+   * se o painel desce ou sobe.
+   */
+  openConfigPanel(anchor?: PanelAnchor | null): Promise<void>
+  /** Ajusta a altura da janela do painel a do conteudo. */
+  resizeConfigPanel(height: number): Promise<void>
+  /** Fecha o painel de configuracao (chamado de dentro dele). */
+  closeConfigPanel(): Promise<void>
+  /** Traz a janela da barra para frente. */
+  showMainWindow(): Promise<void>
+  /** Encerra o Calling. */
+  quit(): Promise<void>
+}
+
+/** Retangulo de onde o painel deve sair. */
+export interface PanelAnchor {
+  x: number
+  y: number
+  width: number
+  height: number
 }
 
 declare global {
@@ -51,3 +73,12 @@ export const desktop: CallingDesktopApi | null =
 
 /** Estamos dentro do app de desktop? */
 export const isDesktop = desktop !== null
+
+/**
+ * Esta janela e o painel de configuracao?
+ *
+ * O painel carrega o MESMO app, so que com `#config` — e assim que ele herda
+ * as cores e as fontes de verdade sem uma segunda copia de HTML.
+ */
+export const isConfigPanel =
+  typeof window !== 'undefined' && window.location.hash.startsWith('#config')
