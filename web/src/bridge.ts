@@ -3,10 +3,58 @@
  */
 
 import { bridgeUrl, sharedSecret } from './config'
+import { isDesktop } from './desktop'
 
 // Endereco e chave sao PERGUNTADOS a cada chamada, nao congelados no import:
 // no navegador vem do `.env` (como sempre), no app de desktop vem da tela de
 // conexao. Ver `config.ts`.
+
+/**
+ * A chamada NEM CHEGOU no bridge.
+ *
+ * O `fetch` do navegador levanta um `TypeError` seco — "Failed to fetch" — para
+ * tudo que morre antes de virar resposta HTTP: rede fora, TLS, DNS e, o caso
+ * que morde aqui, resposta cross-origin SEM os cabecalhos de CORS. E isso que o
+ * Cloudflare Access devolve quando barra a chamada antes de ela chegar no Node:
+ * a pagina de login dele, que nao libera a origem do app.
+ *
+ * Erro NOSSO tem status e corpo ("Bridge respondeu 401"); este nao tem nada. Por
+ * isso ele vira uma classe propria: a tela precisa poder dizer o que fazer em
+ * vez de repetir um "Failed to fetch" que nao ajuda ninguem.
+ */
+export class BridgeUnreachableError extends Error {
+  /** O erro cru do `fetch`, para quem for depurar pelo console. */
+  readonly reason: unknown
+
+  constructor(reason?: unknown) {
+    super(
+      isDesktop
+        ? 'Não consegui falar com o bridge — a chamada nem chegou lá. Pode ser a sessão do Cloudflare: abra a engrenagem e conecte de novo.'
+        : 'Não consegui falar com o bridge — a chamada nem chegou lá. Confira a conexão e o acesso ao Cloudflare.',
+    )
+    this.name = 'BridgeUnreachableError'
+    this.reason = reason
+  }
+}
+
+/**
+ * Um `fetch` so, com a falha de rede ja traduzida.
+ *
+ * Todo mundo aqui passa por esta porta: assim nenhuma rota nova esquece de
+ * tratar o caso, e a mensagem do Cloudflare e a MESMA em qualquer tela.
+ */
+async function call(path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(`${bridgeUrl()}${path}`, {
+      ...init,
+      // Leva o cookie do Cloudflare Access junto; sem ele o Access barra a
+      // chamada antes de ela chegar no bridge.
+      credentials: 'include',
+    })
+  } catch (err) {
+    throw new BridgeUnreachableError(err)
+  }
+}
 
 export interface AgentSummary {
   slug: string
@@ -31,16 +79,13 @@ export interface LiveTokenResponse {
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${bridgeUrl()}${path}`, {
+  const res = await call(path, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       authorization: `Bearer ${sharedSecret()}`,
     },
     body: JSON.stringify(body),
-    // Leva o cookie do Cloudflare Access junto; sem ele o Access barra a
-    // chamada antes de ela chegar no bridge.
-    credentials: 'include',
   })
 
   if (!res.ok) {
@@ -51,9 +96,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function fetchAgents(): Promise<AgentSummary[]> {
-  const res = await fetch(`${bridgeUrl()}/api/agents`, {
+  const res = await call('/api/agents', {
     headers: { authorization: `Bearer ${sharedSecret()}` },
-    credentials: 'include',
   })
   if (!res.ok) throw new Error(`Nao consegui listar os agentes (${res.status})`)
   const data = (await res.json()) as { agents: AgentSummary[] }
@@ -89,18 +133,14 @@ export async function saveIdentity(
   agentSlug: string,
   input: IdentityInput,
 ): Promise<AgentSummary[]> {
-  const res = await fetch(
-    `${bridgeUrl()}/api/agents/${encodeURIComponent(agentSlug)}/identity`,
-    {
-      method: 'PUT',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${sharedSecret()}`,
-      },
-      body: JSON.stringify(input),
-      credentials: 'include',
+  const res = await call(`/api/agents/${encodeURIComponent(agentSlug)}/identity`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${sharedSecret()}`,
     },
-  )
+    body: JSON.stringify(input),
+  })
 
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}) as { error?: string })
@@ -121,12 +161,9 @@ export async function saveIdentity(
  * Quem chama e dono da URL: precisa soltar com `URL.revokeObjectURL`.
  */
 export async function fetchAvatar(agentSlug: string, version: number): Promise<string> {
-  const res = await fetch(
-    `${bridgeUrl()}/api/agents/${encodeURIComponent(agentSlug)}/avatar?v=${version}`,
-    {
-      headers: { authorization: `Bearer ${sharedSecret()}` },
-      credentials: 'include',
-    },
+  const res = await call(
+    `/api/agents/${encodeURIComponent(agentSlug)}/avatar?v=${version}`,
+    { headers: { authorization: `Bearer ${sharedSecret()}` } },
   )
   if (!res.ok) throw new Error(`Sem imagem para ${agentSlug} (${res.status})`)
   return URL.createObjectURL(await res.blob())

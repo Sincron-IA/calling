@@ -5,6 +5,7 @@ import {
   endCall as endCallOnBridge,
   fetchAvatar,
   sendMessage,
+  BridgeUnreachableError,
   type AgentSummary,
 } from './bridge'
 import { createCallAdapter } from './gemini'
@@ -73,7 +74,13 @@ export function App({ readyNotice = '' }: AppProps) {
         setCurrent((slug) => slug || pickPreferredAgent(list))
       })
       .catch((err: Error) =>
-        setError(`Nao consegui falar com o bridge: ${err.message}`),
+        // A falha de rede ja vem com o texto pronto (e com o caminho de volta):
+        // repetir "Nao consegui falar com o bridge" em cima dela so atrapalha.
+        setError(
+          err instanceof BridgeUnreachableError
+            ? err.message
+            : `Nao consegui falar com o bridge: ${err.message}`,
+        ),
       )
   }, [])
 
