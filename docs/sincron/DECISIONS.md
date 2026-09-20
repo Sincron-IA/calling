@@ -271,3 +271,62 @@ Registre decisões técnicas, exceções e motivos.
   seria cortada.
 - Revisar em: no primeiro teste em Windows ou macOS de verdade. Se o retângulo
   ou a sombra voltarem lá, o problema é de plataforma, não deste commit.
+
+## 2026-09-20 - O botão do Cloudflare responde ao clique e a engrenagem só aparece no hover
+
+- Contexto: duas queixas de uso do mesmo pedido do dono. (1) O botão "Conectar
+  ao Cloudflare" não dava sinal nenhum de ter ouvido o clique: o estado ocupado
+  existia, mas dependia inteiro do pai — só acendia quando o `phase` virava
+  `login` e usava a opacidade de campo desligado (45%), o que de longe parece
+  botão morto. Dava para clicar duas vezes e abrir dois logins. (2) A engrenagem
+  de configuração ficava sempre visível ao lado da barra flutuante, poluindo um
+  widget que deveria ser quieto em repouso.
+- Decisão (commit `ab2e61b`), em três partes:
+  1. Estado ocupado próprio do botão (`web/src/ConnectScreen.tsx` +
+     `web/src/styles.css`): um `submitting` LOCAL acende já no `submit`
+     ("Abrindo…"), o pai completa com "Esperando o login…", e o ocupado ganha
+     estilo dele (`aria-busy`, 78% de opacidade, cursor de espera) para o
+     spinner aparecer de verdade. Enquanto isso o botão fica desabilitado —
+     fim do duplo clique. Cancelar, dar erro ou nem abrir devolve o botão ao
+     normal sozinho. O estado local existe justamente para que ele nunca apareça
+     ocioso no intervalo entre o clique e o pai reagir.
+  2. Engrenagem some no repouso (`web/src/DesktopGate.tsx` + `styles.css`):
+     barra e engrenagem passam a morar no mesmo bloco (`.shell`), e é nele que o
+     `:hover` mora; em repouso a engrenagem fica invisível e chega com um fade
+     curto. O teclado continua alcançando, por `:focus-within` e pelo
+     `:focus-visible` dela. O LUGAR dela fica reservado de propósito: a janela
+     tem o tamanho do conteúdo, e uma engrenagem entrando e saindo do layout
+     faria a janela inteira pular a cada passada do mouse.
+  3. Colada na borda direita, ela desce (`electron/main.js`, `preload.js`,
+     `web/src/desktop.ts`): quem sabe onde a janela está é o processo principal,
+     então é ele que mede a distância até a borda direita da área útil e manda
+     `calling:main-edge`; abaixo de `MAIN_EDGE_MARGIN` (16px) a página troca para
+     o desenho empilhado, com a engrenagem EMBAIXO da barra.
+- Medir a âncora, não o retângulo: a conta usa a âncora da barra (o canto onde
+  ela é fixada), não o `bounds` atual. Assim ela não depende do tamanho do
+  conteúdo, que muda o tempo todo — senão mudar o desenho mudaria a largura, que
+  mudaria a conta, e a engrenagem ficaria piscando de um lado para o outro.
+- Alternativas: (a) deixar o botão ocupado só sob controle do pai — é o
+  comportamento que o dono reclamou, existe uma janela de tempo em que ele
+  parece ocioso logo após o clique; (b) tirar a engrenagem do layout quando
+  escondida — rejeitada, faria a janela pular a cada hover; (c) medir o
+  retângulo atual da janela em vez da âncora — rejeitada pelo laço de
+  realimentação acima.
+- Impacto — as limitações honestas: (1) o login do Cloudflare em si **não foi
+  testado ponta a ponta** — isso pede rede real e um humano digitando o código;
+  só o handler do processo principal foi trocado por um dublê de teste, o
+  caminho do renderer é o de verdade. (2) O cenário de borda direita foi
+  reproduzido movendo a janela POR CÓDIGO, não com um humano arrastando o mouse,
+  e num único display Xvfb 1280x800 — **múltiplos monitores não foi testado**.
+  (3) O limiar de 16px é escolha arbitrária: como a janela tem o tamanho do
+  conteúdo e fica sempre dentro da área útil, a engrenagem nunca é de fato
+  cortada; "colada na borda" aqui significa só que a âncora está a menos de 16px
+  da borda. Quem quiser esse comportamento já na posição de repouso mexe na
+  constante `MAIN_EDGE_MARGIN` em `electron/main.js` (o repouso deixa 24px de
+  folga, de propósito maior que o limiar). (4) Efeito colateral aceito: no modo
+  empilhado o rótulo `.chip__label` (o nome de quem ligou) fica escondido, para
+  não ficar por baixo da engrenagem que acabou de se mudar para aquele lugar —
+  só nesse modo; no desenho normal continua igual.
+- Revisar em: no primeiro login real do Luiz (para o botão ocupado) e no
+  primeiro uso com mouse de verdade, de preferência com mais de um monitor
+  (para o caso da borda).
