@@ -172,8 +172,59 @@ preciso, o caminho e adicionar `electron-builder` ao workspace `electron/`.
 
 Detalhes em [`docs/sincron/DEPLOYMENT.md`](docs/sincron/DEPLOYMENT.md).
 
+## Log do bridge
+
+O `journalctl` continua servindo para olhar ao vivo, mas ele mistura ruido do
+systemd com a saida do app e nao da para filtrar. Entao o bridge tambem escreve
+um log proprio, **um JSON por linha** (NDJSON), feito para ser procurado depois
+com ferramenta comum:
+
+```
+/var/log/calling-bridge/current.log   -> link para o arquivo ativo
+/var/log/calling-bridge/bridge.N.log  -> os rodados
+```
+
+```bash
+# por que uma origem foi recusada (com o valor exato da origem)
+grep '"event":"cors_rejected"' /var/log/calling-bridge/current.log | jq .
+
+# o que aconteceu com os toques
+jq -c 'select(.event=="ring_resolved")' /var/log/calling-bridge/*.log
+
+# tudo que deu errado hoje
+grep '"level":"error"' /var/log/calling-bridge/*.log
+```
+
+Eventos: `bridge_started`, `http_request`, `cors_rejected`, `live_token_issued`,
+`live_token_failed`, `live_token_unknown_agent`, `ring_created`,
+`ring_resolved`, `incoming_action`, `incoming_action_stale`, `sse_attached`,
+`sse_unauthorized`, `ask_answered`, `ask_failed`, `unhandled_error`.
+
+**Tamanho e limitado:** rodizio por tamanho (`pino` + `pino-roll`), 5 MB por
+arquivo e 5 arquivos no total — teto de ~25 MB, nunca cresce para sempre. Os
+caminhos e limites mudam pelo `.env` (`CALLING_LOG_DIR`, `CALLING_LOG_MAX_SIZE`,
+`CALLING_LOG_MAX_FILES`, `CALLING_LOG_LEVEL`).
+
+O diretorio fica **fora do repositorio** de proposito: o worktree em
+`.claude/worktrees/` e descartavel, e o log precisa sobreviver a restart e a
+rebuild.
+
+**Segredo nao entra no log.** Vai metadado: origem, caminho, metodo, status,
+duracao, slug do agente, desfecho, mensagem de erro. Nunca a chave da Gemini, o
+segredo do app, o token efemero, o motivo do toque, a pergunta ou a resposta.
+
 ## Seguranca
 
+- **Origens permitidas** (`CALLING_ALLOWED_ORIGINS`): lista explicita, separada
+  por virgula. Sem curinga — com `credentials: true` o proprio Fetch recusa `*`,
+  e abrir para qualquer origem tiraria a ultima barreira depois do Access.
+  Detalhe que ja custou uma ligacao: para o navegador `http://localhost:5173` e
+  `http://127.0.0.1:5173` sao origens **diferentes**, mesmo caindo na mesma
+  maquina. O bridge resolve isso sozinho — endereco de loopback na lista libera
+  as tres grafias (`localhost`, `127.0.0.1`, `[::1]`) naquela mesma porta. A
+  **porta**, porem, e literal: se o Vite subir no 5174 por o 5173 estar ocupado,
+  acrescente a porta no `.env`. Quando alguma coisa e recusada, o log diz qual
+  origem era (`cors_rejected`) e o cliente recebe 403 com texto, nao 500 mudo.
 - `GEMINI_API_KEY` fica **so no servidor**. O browser recebe um token efemero
   (uso unico, validade curta, modelo e config travados).
   Nao passe `lockAdditionalFields` ao criar esse token: no `@google/genai`
