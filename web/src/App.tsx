@@ -5,6 +5,7 @@ import { createCallAdapter } from './gemini'
 import { agentColor, pickPreferredAgent, registerCall } from './agents'
 import { CallingBar, type CallPhase } from './CallingBar'
 import {
+  answerIncoming,
   approveIncoming,
   declineIncoming,
   dismissIncoming,
@@ -42,8 +43,8 @@ export function App() {
       )
   }, [])
 
-  // Chamadas recebidas (um agente ligando para o Luiz). A fonte ainda e a casca
-  // em `incoming.ts` — o bridge nao tem esse canal.
+  // Chamadas recebidas (um agente ligando para o Luiz): chegam do bridge por
+  // SSE. A fila da tela e sempre a que o servidor manda.
   useEffect(() => subscribeIncomingCalls(setIncoming), [])
 
   const hangUp = useCallback(async () => {
@@ -127,9 +128,13 @@ export function App() {
     dismissIncoming(incomingCall.id)
   }, [])
 
-  /** Atender: e uma ligacao normal com o agente que chamou. */
+  /**
+   * Atender: avisa o agente que ele foi atendido (o `/api/ring` dele volta com
+   * `answered`) e abre uma ligacao normal com quem chamou.
+   */
   const onAnswer = useCallback(
     (incomingCall: IncomingCall) => {
+      answerIncoming(incomingCall)
       dismissIncoming(incomingCall.id)
       void call(incomingCall.agentSlug)
     },
@@ -137,8 +142,8 @@ export function App() {
   )
 
   /**
-   * Recusar (no dedo ou por tempo esgotado). Quem trata isso do outro lado e
-   * responsavel por mandar a mesma `reason` no Telegram — o front nao manda
+   * Recusar (no dedo ou por tempo esgotado). Quem trata isso do outro lado e o
+   * agente que ligou: e ele quem decide avisar no Telegram — o front nao manda
    * mensagem nenhuma.
    */
   const onDecline = useCallback((incomingCall: IncomingCall, cause: DeclineCause) => {
@@ -146,8 +151,13 @@ export function App() {
     dismissIncoming(incomingCall.id)
   }, [])
 
+  // A cor pode vir do `agents.json` (assim um agente novo nao depende de
+  // codigo); sem ela, cai na paleta fixa pela posicao na lista.
   const colorOf = useCallback(
-    (slug: string) => agentColor(agents.findIndex((a) => a.slug === slug)),
+    (slug: string) => {
+      const index = agents.findIndex((a) => a.slug === slug)
+      return agents[index]?.color || agentColor(index)
+    },
     [agents],
   )
 

@@ -1,9 +1,24 @@
 import express from 'express'
 import cors from 'cors'
 import { publicAgentList, findAgent } from './agents.js'
-import { requireSecret } from './auth.js'
+import {
+  agentsAbleToRing,
+  bearerOf,
+  isSharedSecret,
+  requireAgentToken,
+  requireSecret,
+} from './auth.js'
 import { askAgent, endCall } from './claude.js'
 import { createLiveToken } from './gemini.js'
+import {
+  attachStream,
+  finish,
+  listPending,
+  ring,
+  RING_TIMEOUT_MS,
+  streamCount,
+  type RingOutcome,
+} from './ring.js'
 
 const PORT = Number(process.env.PORT || 8787)
 
@@ -87,7 +102,117 @@ app.post('/api/end-call', requireSecret, (req, res) => {
   res.json({ ok: true })
 })
 
+/* ====================================================================== */
+/*  CHAMADAS RECEBIDAS — um agente liga para o dono                       */
+/* ====================================================================== */
+
+/**
+ * O agente TOCA o Calling e fica na linha.
+ *
+ * Autenticado pela credencial propria do agente (nao pelo segredo do app): o
+ * bridge descobre QUEM esta ligando pelo token, nao por um nome declarado.
+ *
+ * A resposta so sai quando o dono decide (ou o tempo estoura) — quem chama so
+ * precisa de um `await`, sem polling.
+ */
+app.post('/api/ring', requireAgentToken, async (req, res) => {
+  const agent = req.ringAgent!
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : ''
+
+  if (!reason) {
+    res.status(400).json({ error: 'Informe "reason": uma linha dizendo por que voce ligou.' })
+    return
+  }
+  if (reason.length > 500) {
+    res.status(400).json({ error: 'O motivo precisa caber num cartao: no maximo 500 caracteres.' })
+    return
+  }
+
+  const handle = ring({ agentSlug: agent.slug, agentName: agent.name, reason })
+  // Nao logamos o motivo: e recado do agente para o dono.
+  console.log(
+    `[calling] toque de ${agent.slug} (${handle.call.id}) — ${streamCount()} tela(s) ouvindo`,
+  )
+
+  // O agente desistiu antes da decisao: tira o cartao da tela.
+  // (Tem de ser `res`: desde o Node 16 o `close` do `req` dispara assim que o
+  // corpo termina de ser lido, o que aconteceria na hora e mataria o toque.)
+  res.on('close', () => handle.abandon())
+
+  const resolution = await handle.outcome
+  console.log(`[calling] toque ${handle.call.id}: ${resolution.outcome}`)
+
+  if (res.writableEnded || res.destroyed) return
+  res.json({
+    callId: handle.call.id,
+    outcome: resolution.outcome,
+    resolvedAt: resolution.resolvedAt,
+  })
+})
+
+/**
+ * Fluxo de chamadas recebidas para o browser (SSE).
+ *
+ * `EventSource` nao deixa mandar cabecalho, entao aceitamos tambem `?token=`
+ * com o MESMO segredo compartilhado das outras rotas do app. O bridge so
+ * escuta em 127.0.0.1 e nao loga URL; quem chega de fora passa antes pelo
+ * Cloudflare Access.
+ */
+app.get('/api/incoming/stream', (req, res) => {
+  const token = bearerOf(req) || String(req.query.token || '')
+  if (!isSharedSecret(token)) {
+    res.status(401).json({ error: 'Nao autorizado.' })
+    return
+  }
+  attachStream(res)
+})
+
+/** Fallback sem stream (e util para depurar): a fila neste instante. */
+app.get('/api/incoming', requireSecret, (_req, res) => {
+  res.json({ calls: listPending(), timeoutMs: RING_TIMEOUT_MS })
+})
+
+/**
+ * O dedo do Luiz chegando de volta. Uma rota so, com o desfecho no corpo:
+ *   approve  -> resolvido na hora, sem voz
+ *   decline  -> recusado no dedo
+ *   answer   -> ele vai atender por voz
+ *   timeout  -> o relogio da UI estourou (vale como ninguem atendeu)
+ *
+ * Idempotente de proposito: clique e timeout podem se cruzar, e duas abas
+ * podem clicar. O primeiro desfecho vale e os outros recebem o mesmo de volta.
+ */
+const ACTIONS: Record<string, RingOutcome> = {
+  approve: 'approved',
+  decline: 'declined',
+  answer: 'answered',
+  timeout: 'no_answer',
+}
+
+app.post('/api/incoming/:id/:action', requireSecret, (req, res) => {
+  const outcome = ACTIONS[String(req.params.action)]
+  if (!outcome) {
+    res.status(400).json({ error: 'Acao desconhecida.' })
+    return
+  }
+
+  const resolution = finish(String(req.params.id), outcome)
+  if (!resolution) {
+    res.status(404).json({ error: 'Essa chamada nao existe mais.' })
+    return
+  }
+
+  res.json({ ok: true, outcome: resolution.outcome, applied: resolution.applied })
+})
+
 app.listen(PORT, HOST, () => {
   console.log(`[calling] bridge ouvindo em http://${HOST}:${PORT}`)
   console.log(`[calling] agentes: ${publicAgentList().map((a) => a.slug).join(', ')}`)
+  const ringers = agentsAbleToRing()
+  console.log(
+    ringers.length > 0
+      ? `[calling] podem tocar (credencial propria): ${ringers.join(', ')}`
+      : '[calling] nenhum agente com credencial de toque — /api/ring desativado.',
+  )
+  console.log(`[calling] toque expira em ${RING_TIMEOUT_MS}ms`)
 })

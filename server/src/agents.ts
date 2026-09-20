@@ -7,6 +7,19 @@ export interface AgentEntry {
   name: string
   workspace: string
   enabled: boolean
+  /** Cor do agente na UI (hex). Opcional: sem ela a web usa a paleta padrao. */
+  color?: string
+}
+
+/**
+ * Nome da variavel de ambiente com o segredo de TOQUE daquele agente.
+ *
+ * Segredo NUNCA mora no agents.json (que e publico no GitHub): mora no .env
+ * privado carregado pelo EnvironmentFile do systemd. Adicionar um agente novo
+ * ao Calling e, por isso, uma entrada aqui + uma linha no .env — sem codigo.
+ */
+export function ringTokenEnvName(slug: string): string {
+  return `CALLING_RING_TOKEN_${slug.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`
 }
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -60,5 +73,5 @@ export function findAgent(slug: string): AgentEntry | undefined {
 
 /** Lista enxuta para a UI — sem expor caminhos do servidor. */
 export function publicAgentList() {
-  return loadAgents().map(({ slug, name }) => ({ slug, name }))
+  return loadAgents().map(({ slug, name, color }) => ({ slug, name, color }))
 }

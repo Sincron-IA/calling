@@ -1,42 +1,47 @@
 /**
  * Chamadas RECEBIDAS — quando um agente e que liga para o Luiz.
  *
- * ATENCAO: o bridge ainda NAO tem esse canal. Nao existe endpoint, SSE nem
- * websocket de chamada recebida em `server/` (as rotas de hoje sao
- * `/api/agents`, `/api/gemini-live-token`, `/api/ask` e `/api/end-call`).
- * Tudo aqui e a CASCA: os tipos, o contrato de assinatura e os callbacks que a
- * UI chama na hora certa. Quando o canal existir, so o miolo de
- * `subscribeIncomingCalls`, `approveIncoming` e `declineIncoming` muda — a UI
- * nao precisa saber.
+ * O canal e real: o bridge mantem um fluxo SSE (`GET /api/incoming/stream`) e
+ * empurra cada toque assim que ele chega. Escolhemos SSE e nao websocket
+ * porque o transito aqui e de mao unica (servidor -> browser), o EventSource
+ * reconecta sozinho e um stream HTTP comum atravessa o tunel/Access sem
+ * upgrade de protocolo.
+ *
+ * As acoes (aprovar, atender, recusar) voltam em POST normal, e e o SERVIDOR
+ * que solta a chamada HTTP que o agente deixou pendurada no `/api/ring`.
  */
 
+import { BRIDGE_URL, SHARED_SECRET } from './bridge'
+
 export interface IncomingCall {
-  /** Id da chamada; vem do agente/bridge (aqui, do simulador de dev). */
+  /** Id da chamada, gerado pelo bridge. E por ele que a acao volta. */
   id: string
-  /** Slug do agente que esta ligando. */
+  /** Slug do agente que esta ligando (o bridge deduz do segredo dele). */
   agentSlug: string
   /**
    * Uma linha escrita pelo agente dizendo POR QUE ligou
    * (ex.: "Decisao pendente: adiar o compromisso das 15h?").
    *
    * A UI trata isso como texto opaco: renderiza como veio, sem interpretar.
-   * Hoje e texto livre; se um dia virar rotulo de categoria, continua exibindo
-   * do mesmo jeito — nao ha nada aqui que dependa do formato.
    */
   reason: string
-  /** Quando a chamada chegou (ms). E daqui que sai o timeout do toque. */
+  /** Quando a chamada chegou (ms). */
   receivedAt: number
+  /** Instante (ms) em que o toque expira no SERVIDOR. Manda quem manda. */
+  expiresAt?: number
+  /** Nome do agente ja resolvido pelo bridge (fallback se a lista falhar). */
+  agentName?: string
 }
 
 /** Por que a chamada foi recusada: no dedo do Luiz ou por tempo esgotado. */
 export type DeclineCause = 'manual' | 'timeout'
 
 /**
- * Quanto tempo o toque fica de pe antes de virar recusa implicita (e cair para
- * o Telegram).
+ * Quanto tempo o toque fica de pe antes de virar recusa por falta de resposta.
  *
- * PLACEHOLDER: o Luiz ainda nao decidiu a duracao. 30s e um padrao de telefone
- * comum — trocar aqui e o suficiente, o resto da UI le esta constante.
+ * ATENCAO: o valor de verdade e o do servidor (RING_TIMEOUT_MS em
+ * `server/src/ring.ts`), que chega em cada toque no campo `expiresAt`. Esta
+ * constante e so o fallback de quando o campo nao vier.
  */
 export const INCOMING_CALL_TIMEOUT_MS = 30_000
 
@@ -49,52 +54,107 @@ function emit(): void {
   for (const listener of listeners) listener(calls)
 }
 
-/** Remove uma chamada da fila local (a UI ja resolveu o que fazer com ela). */
-export function dismissIncoming(id: string): void {
-  const next = calls.filter((call) => call.id !== id)
-  if (next.length === calls.length) return
+function setCalls(next: IncomingCall[]): void {
   calls = next
   emit()
 }
 
+/** Remove uma chamada da fila local (a UI ja resolveu o que fazer com ela). */
+export function dismissIncoming(id: string): void {
+  const next = calls.filter((call) => call.id !== id)
+  if (next.length === calls.length) return
+  setCalls(next)
+}
+
+function push(call: IncomingCall): void {
+  if (calls.some((existing) => existing.id === call.id)) return
+  setCalls([...calls, call])
+}
+
+/* --------------------------------------------------------------- stream -- */
+
+let source: EventSource | null = null
+
 /**
- * STUB — assina a fila de chamadas recebidas.
- *
- * Hoje a fila so enche pelo simulador de dev (veja abaixo). Quando o bridge
- * ganhar o canal, e aqui que entra o `EventSource('/api/incoming')` (ou
- * websocket), chamando `push`/`dismissIncoming` conforme os eventos chegam.
+ * Liga (uma vez) o fluxo do bridge. O EventSource ja reconecta sozinho quando
+ * a conexao cai; no `hello` da reconexao o servidor reenvia a fila inteira,
+ * entao a tela volta ao estado certo mesmo depois de uma queda de rede.
  */
+function ensureStream(): void {
+  if (source || typeof EventSource === 'undefined') return
+
+  // EventSource nao aceita cabecalho: o segredo vai na query (o bridge aceita
+  // os dois jeitos). E o mesmo segredo que o app ja carrega.
+  const url = `${BRIDGE_URL}/api/incoming/stream?token=${encodeURIComponent(SHARED_SECRET)}`
+  const es = new EventSource(url)
+  source = es
+
+  es.addEventListener('hello', (event) => {
+    const data = JSON.parse((event as MessageEvent).data) as { pending: IncomingCall[] }
+    // A fila do servidor e a verdade: adota ela inteira.
+    setCalls(data.pending ?? [])
+  })
+
+  es.addEventListener('ring', (event) => {
+    push(JSON.parse((event as MessageEvent).data) as IncomingCall)
+  })
+
+  es.addEventListener('resolved', (event) => {
+    const data = JSON.parse((event as MessageEvent).data) as { id: string }
+    // Resolvida em outra aba, por voz, ou por tempo no servidor: some daqui.
+    dismissIncoming(data.id)
+  })
+
+  es.onerror = () => {
+    // Nao fechamos: o proprio EventSource tenta de novo sozinho.
+    console.warn('[calling] fluxo de chamadas caiu; tentando reconectar…')
+  }
+}
+
+/** Assina a fila de chamadas recebidas. */
 export function subscribeIncomingCalls(listener: Listener): () => void {
   listeners.add(listener)
   listener(calls)
+  ensureStream()
   return () => {
     listeners.delete(listener)
   }
 }
 
+/* --------------------------------------------------------------- acoes --- */
+
 /**
- * STUB — o Luiz aprovou o item sem abrir voz nenhuma.
- * TODO(bridge): mandar a resolucao para o agente (`POST /api/incoming/:id/approve`).
+ * Manda a decisao para o bridge, que solta o `/api/ring` que o agente deixou
+ * pendurado. 404 aqui e normal: quer dizer que o toque ja tinha sido resolvido
+ * (timeout do servidor, outra aba) — nao e erro para mostrar na tela.
  */
+function resolveOnBridge(call: IncomingCall, action: 'approve' | 'decline' | 'answer' | 'timeout') {
+  void fetch(`${BRIDGE_URL}/api/incoming/${encodeURIComponent(call.id)}/${action}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${SHARED_SECRET}` },
+    keepalive: true,
+  }).catch((err: Error) => {
+    console.warn(`[calling] nao consegui avisar o bridge (${action}):`, err.message)
+  })
+}
+
+/** O Luiz aprovou o item sem abrir voz nenhuma. */
 export function approveIncoming(call: IncomingCall): void {
-  console.warn(
-    '[calling] approveIncoming ainda nao tem bridge: o agente NAO foi avisado.',
-    call,
-  )
+  resolveOnBridge(call, 'approve')
+}
+
+/** Ele vai atender por voz: o agente ja pode parar de esperar. */
+export function answerIncoming(call: IncomingCall): void {
+  resolveOnBridge(call, 'answer')
 }
 
 /**
- * STUB — recusa (no dedo ou por timeout).
- *
- * Quem recebe isso no servidor e responsavel pelo FALLBACK: mandar no Telegram
- * a mesma `reason`, no canal de sempre. O front nao manda Telegram nenhum.
- * TODO(bridge): `POST /api/incoming/:id/decline` com a causa.
+ * Recusa. No dedo vira `declined`; por tempo esgotado vira `no_answer` — o
+ * agente que ligou e quem decide o que fazer com isso (inclusive avisar no
+ * Telegram, que e trabalho dele, nao do Calling).
  */
 export function declineIncoming(call: IncomingCall, cause: DeclineCause): void {
-  console.warn(
-    `[calling] declineIncoming (${cause}) ainda nao tem bridge: o fallback para o Telegram NAO aconteceu.`,
-    call,
-  )
+  resolveOnBridge(call, cause === 'timeout' ? 'timeout' : 'decline')
 }
 
 /**
@@ -106,29 +166,4 @@ export function declineIncoming(call: IncomingCall, cause: DeclineCause): void {
  */
 export function sendToTelegram(agentSlug: string, text: string): void {
   console.warn('[calling] sendToTelegram ainda nao tem bridge.', { agentSlug, text })
-}
-
-if (import.meta.env.DEV) {
-  // Simulador de chamada recebida, so em dev, para dar para ver o estado na tela
-  // enquanto o bridge nao existe:
-  //   __calling.ring('ivo', 'Decisao pendente: adiar o compromisso das 15h?')
-  //   __calling.clear()
-  const debug = {
-    ring(agentSlug: string, reason = 'Decisao pendente.') {
-      const call: IncomingCall = {
-        id: crypto.randomUUID(),
-        agentSlug,
-        reason,
-        receivedAt: Date.now(),
-      }
-      calls = [...calls, call]
-      emit()
-      return call.id
-    },
-    clear() {
-      calls = []
-      emit()
-    },
-  }
-  ;(window as unknown as { __calling: typeof debug }).__calling = debug
 }

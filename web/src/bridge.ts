@@ -2,15 +2,20 @@
  * Cliente do bridge — o servidor que fala com os agentes de verdade.
  */
 
-const BRIDGE_URL = (import.meta.env.VITE_BRIDGE_URL || 'http://localhost:8787').replace(
-  /\/$/,
-  '',
-)
-const SECRET = import.meta.env.VITE_CALLING_SHARED_SECRET || ''
+export const BRIDGE_URL = (
+  import.meta.env.VITE_BRIDGE_URL || 'http://localhost:8787'
+).replace(/\/$/, '')
+
+/** Mesmo segredo das outras rotas; o fluxo SSE de chamadas recebidas usa ele. */
+export const SHARED_SECRET = import.meta.env.VITE_CALLING_SHARED_SECRET || ''
+
+const SECRET = SHARED_SECRET
 
 export interface AgentSummary {
   slug: string
   name: string
+  /** Cor vinda do `agents.json` — opcional; sem ela a UI usa a paleta padrao. */
+  color?: string
 }
 
 export interface LiveTokenResponse {

@@ -31,7 +31,7 @@ voz  ->  Gemini Live (escuta, transcreve, detecta turno)
 web/        app Vite + React + TypeScript (orb-ui, tema "bars") — vai pra Vercel
 server/     bridge Node + Express — roda NA VPS, junto dos agentes
 electron/   wrapper fino de desktop: so abre uma janela com o app web
-agents.json quais agentes podem receber ligacao
+agents.json quais agentes o Calling conhece (nome, workspace, cor) — sem segredo
 docs/       AGENT-BRIDGE.md + padrao Sincron em docs/sincron/
 ```
 
@@ -88,6 +88,52 @@ microfone — e preciso aceitar.
 > dentro do workspace de cada agente. Rodando na sua maquina, o app sobe mas as
 > ligacoes falham.
 
+## Quando um agente liga (chamada recebida)
+
+O agente toca o Calling com um POST e **fica na linha**: a resposta HTTP so sai
+quando o Luiz decide (ou quando o tempo acaba). Nao ha polling nem webhook de
+volta — do lado do agente e um `await` e pronto.
+
+```bash
+curl -X POST https://<bridge>/api/ring \
+  -H "authorization: Bearer $CALLING_RING_TOKEN_IVO" \
+  -H "content-type: application/json" \
+  -d '{"reason":"Backup da madrugada falhou, posso rodar de novo agora?"}'
+# ... fica pendurado ate o Luiz responder ...
+{"callId":"...","outcome":"approved","resolvedAt":1789866633232}
+```
+
+Desfechos possiveis: `approved` (resolveu no dedo, sem voz), `answered` (ele vai
+falar com voce por voz), `declined` (recusou) e `no_answer` (nao respondeu a
+tempo). O que fazer com cada um e **decisao do agente que ligou** — inclusive
+avisar no Telegram, que e trabalho dele, nao do Calling.
+
+A identidade vem da **credencial**, nao de um nome declarado: cada agente tem o
+seu `CALLING_RING_TOKEN_<SLUG>` no `.env` privado da VPS, e o bridge descobre
+quem esta ligando pelo segredo apresentado. Nao da para um agente se passar por
+outro. O `CALLING_SHARED_SECRET` continua sendo outra coisa: e o do app no
+browser.
+
+### Colocar um agente novo no Calling
+
+Sem tocar em codigo — sao dois passos:
+
+1. Uma entrada no `agents.json` (publico, **sem segredo**):
+
+   ```json
+   { "slug": "nina", "name": "Nina", "workspace": "/home/dgclaw-nina", "color": "#f97316", "enabled": true }
+   ```
+
+2. Uma linha no `.env` privado da VPS, com o slug em maiusculas:
+
+   ```bash
+   echo "CALLING_RING_TOKEN_NINA=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")" >> .env
+   ```
+
+Depois `systemctl restart calling-bridge.service`. Tirar um agente e o inverso:
+`"enabled": false` (ou apagar a entrada) e apagar a linha do `.env`. Agente sem
+credencial simplesmente nao consegue tocar.
+
 ## Build
 
 ```bash
@@ -130,8 +176,12 @@ Detalhes em [`docs/sincron/DEPLOYMENT.md`](docs/sincron/DEPLOYMENT.md).
 
 - `GEMINI_API_KEY` fica **so no servidor**. O browser recebe um token efemero
   (uso unico, validade curta, modelo e config travados).
-- O acesso e por um segredo compartilhado — deliberadamente simples, porque isto
-  e ferramenta pessoal do Luiz e do Matheus, nao produto multiusuario.
+- O acesso do app e por um segredo compartilhado — deliberadamente simples,
+  porque isto e ferramenta pessoal do Luiz e do Matheus, nao produto multiusuario.
+- Chamada recebida e diferente: cada agente tem **credencial propria**
+  (`CALLING_RING_TOKEN_<SLUG>`), para o bridge poder afirmar quem esta ligando.
+  Esses segredos moram so no `.env` (0600, carregado pelo `EnvironmentFile` do
+  systemd), nunca no `agents.json` nem no `ExecStart`.
 - O segredo do app fica visivel para quem abrir o app. Por isso o bridge deve
   ficar em rede restrita. Ver [`docs/sincron/SECURITY.md`](docs/sincron/SECURITY.md).
 - Transcricao e resposta de agente **nao** sao gravadas em lugar nenhum.

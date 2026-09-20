@@ -237,9 +237,10 @@ export function CallingBar({
     [agents, current],
   )
 
-  /* O toque nao fica de pe para sempre: passado o tempo, vira recusa implicita
-     (e o servidor cai para o Telegram). Cada chamada tem o seu proprio relogio,
-     contado a partir de quando ela chegou. */
+  /* O toque nao fica de pe para sempre: passado o tempo, vira "ninguem
+     atendeu". Cada chamada tem o seu proprio relogio, e quem manda na hora de
+     morrer e o SERVIDOR (`expiresAt`, que vem junto do toque) — a constante
+     local so cobre o caso de ele nao ter mandado. */
   const declineRef = useRef(onDecline)
   useEffect(() => {
     declineRef.current = onDecline
@@ -247,7 +248,8 @@ export function CallingBar({
 
   useEffect(() => {
     const timers = incoming.map((call) => {
-      const left = Math.max(0, call.receivedAt + INCOMING_CALL_TIMEOUT_MS - Date.now())
+      const expiresAt = call.expiresAt ?? call.receivedAt + INCOMING_CALL_TIMEOUT_MS
+      const left = Math.max(0, expiresAt - Date.now())
       return window.setTimeout(() => declineRef.current(call, 'timeout'), left)
     })
     return () => timers.forEach((id) => window.clearTimeout(id))
