@@ -58,6 +58,33 @@ reverso com TLS:
 `SECURITY.md`: quem alcança o bridge alcança os agentes, que rodam com
 `bypassPermissions`. Restrinja por IP, VPN ou Cloudflare Access.
 
+### Cloudflare Access precisa liberar o `content-type` no CORS
+
+Se o bridge estiver atrás do Cloudflare Access (é o caso de
+`calling-bridge.sincronia.digital`), **quem responde o preflight é o Access, não
+o nosso `cors()`**. E o preflight do navegador nunca leva cookie: o
+`CF_Authorization` não ajuda nessa hora.
+
+Então, nas *CORS settings* da aplicação no Zero Trust, a lista de
+**Access-Control-Allow-Headers** tem que incluir `content-type` além de
+`authorization`. Sem isso, toda chamada com corpo JSON (`POST /api/message`,
+`POST /api/ask`, `POST /api/gemini-live-token`, `PUT .../identity`) morre no
+preflight, o app mostra o `TypeError: Failed to fetch` seco e **a requisição nem
+aparece no log do bridge** — o que faz parecer bug de servidor quando não é.
+
+Conferir sem depender de login nenhum (preflight não é autenticado):
+
+```bash
+# tem que voltar com access-control-allow-origin/headers
+curl -si -X OPTIONS https://calling-bridge.sincronia.digital/api/message \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: authorization,content-type' \
+  | grep -i '^access-control'
+```
+
+Resposta vazia = o Access está barrando; ajuste a lista de headers lá.
+
 ### Alternativa sem expor nada
 
 Se a ideia for usar só do computador do Luiz: rodar o app local

@@ -432,3 +432,44 @@ Registre decisões técnicas, exceções e motivos.
 - Pendência: de qual bot e de qual chat cada agente fala ainda não foi
   levantado na VPS. Sem isso o eco fica desligado em silêncio.
 - Revisar em: quando as credenciais existirem e o eco rodar de verdade.
+
+## 2026-09-20 - "Failed to fetch" vira erro nomeado; o preflight é do Cloudflare
+
+- Contexto: o recado escrito do app de desktop morria com "NÃO CONSEGUI MANDAR /
+  Failed to fetch", enquanto a MESMA rota (`POST /api/message`) respondia certo
+  por `curl` na VPS. O log do bridge explicou: **nenhum** `POST /api/message` com
+  `origin: http://localhost:5173` chegou ao Node — só os `GET /api/agents`. A
+  chamada morria antes, no preflight, que o Cloudflare Access responde ele mesmo
+  e sem liberar o cabeçalho `content-type` (preflight não leva cookie, então
+  sessão do Access não é o que decide isso). Ver `DEPLOYMENT.md`.
+- Decisão: (a) o conserto de verdade é a lista de headers do Access, e está
+  escrito no `DEPLOYMENT.md` com o `curl` que confere; (b) no app, toda falha de
+  rede do `fetch` passa a virar `BridgeUnreachableError`, com texto que diz o que
+  fazer ("pode ser a sessão do Cloudflare: abra a engrenagem e conecte de novo")
+  em vez do `TypeError` cru.
+- Alternativas: mandar o corpo como `text/plain` (cabeçalho *safelisted*, não
+  entra no preflight) e afrouxar o parser do bridge — **rejeitada**: mente sobre
+  o que o corpo é, para contornar uma configuração que se ajusta num campo.
+- Impacto: enquanto o Access não liberar `content-type`, voz e recado escrito
+  continuam parados pelo app — mas agora a tela diz isso, o rascunho não se
+  perde, e a engrenagem (que é o caminho de reconexão que já existia) está ali.
+- Revisar em: quando o Access estiver ajustado — e aí conferir que o log do
+  bridge passa a mostrar os `POST` vindos do app.
+
+## 2026-09-20 - O painel da engrenagem não pede conexão de quem já está conectado
+
+- Contexto: o painel reaproveita a `ConnectScreen` da primeira vez. Ela nunca
+  olhou o `statusLabel`, então mostrava "CONECTADO" no cabeçalho e, logo abaixo,
+  endereço, chave e o botão "Conectar ao Cloudflare" cheio — como se faltasse
+  fazer alguma coisa.
+- Decisão: prop nova `connected`. Com ela, a tela mostra só a linha "Conectado ao
+  Cloudflare…" e um `Conectar de novo` discreto; o formulário volta inteiro em
+  `sem chave` (primeira vez) e `reconectar` (sessão vencida ou chave errada). O
+  painel só espera pela conferência com o bridge antes de abrir, para não piscar
+  o formulário na cara de quem está com tudo funcionando.
+- Alternativas: comparar `statusLabel === 'conectado'` dentro do componente —
+  rejeitada, amarra o desenho ao texto do selo.
+- Impacto: `DesktopGate` (primeira conexão) não passa a prop e não muda em nada.
+  O `Conectar de novo` existe de propósito: sem ele, quem chegasse pela mensagem
+  de erro do recado encontraria um painel sem saída.
+- Revisar em: se o painel ganhar mais estados que "conectado / não conectado".
