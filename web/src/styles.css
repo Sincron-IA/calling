@@ -706,7 +706,9 @@ body {
   font-size: 0.86rem;
   font-weight: 600;
   cursor: pointer;
-  transition: filter 0.15s ease;
+  transition:
+    filter 0.15s ease,
+    opacity 0.15s ease;
 }
 
 .connect__button:hover:not(:disabled) {
@@ -716,6 +718,14 @@ body {
 .connect__button:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* Botao trabalhando: continua DESLIGADO (nao adianta clicar de novo), mas nao
+   com a mesma cara de campo vazio — o giro precisa aparecer. So a opacidade e
+   o cursor mudam; a cor e a mesma de sempre. */
+.connect__button[aria-busy='true']:disabled {
+  opacity: 0.78;
+  cursor: progress;
 }
 
 .connect__hint {
@@ -765,12 +775,51 @@ body {
   }
 }
 
-/* A engrenagem que abre o painel de conexao com o app ja ligado. */
+/* ------------------------------------------------------------------------ */
+/* A dupla barra + engrenagem                                                */
+/*                                                                          */
+/* Existe so na janela da barra (o `DesktopGate` monta os dois aqui dentro). */
+/* E este bloco que o mouse precisa achar para a engrenagem aparecer: o      */
+/* `:hover` mora nele, e nao na engrenagem, que em repouso esta invisivel.   */
+/* ------------------------------------------------------------------------ */
+
+.shell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Barra colada na borda DIREITA da tela: ao lado, a engrenagem ficaria
+   espremida contra o canto (no Windows, ainda por cima da faixa que abre a
+   central de notificacoes). Entao ela desce. Quem avisa que estamos nesse caso
+   e o processo principal, que e quem sabe onde a janela esta — `calling:main-edge`. */
+.shell--stacked {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+/* A legenda do chip ("Fulano · clica pra ligar de novo") e absoluta, logo
+   ABAIXO do chip — o mesmo lugar para onde a engrenagem acabou de se mudar.
+   Nesta janela ela ja nao aparece (a janela tem a altura do conteudo e a
+   legenda cai fora dela); aqui, com a engrenagem embaixo, a janela cresce e a
+   legenda voltaria a ser pintada bem em cima dela. */
+.shell--stacked .chip__label {
+  display: none;
+}
+
+/* A engrenagem que abre o painel de conexao com o app ja ligado.
+
+   Em repouso ela nao aparece: a barra fica limpa, que era o pedido. O LUGAR
+   dela continua reservado de proposito — a janela tem o tamanho do conteudo,
+   entao uma engrenagem que entrasse e saisse do layout faria a janela inteira
+   pular a cada passada do mouse. */
 .gear {
   position: fixed;
   top: 14px;
   right: 14px;
   z-index: 30;
+  opacity: 0;
+  transform: scale(0.88);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -783,8 +832,19 @@ body {
   color: var(--muted);
   cursor: pointer;
   transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
     color 0.15s ease,
     background 0.15s ease;
+}
+
+/* O mouse em cima da dupla acende a engrenagem. `:focus-within` e o mesmo
+   caminho pelo teclado: sem ele, o Tab levaria a um botao invisivel. */
+.shell:hover .gear,
+.shell:focus-within .gear,
+.gear:focus-visible {
+  opacity: 1;
+  transform: none;
 }
 
 .gear:hover {
@@ -795,6 +855,11 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .connect__spinner {
     animation-duration: 2.4s;
+  }
+
+  /* A engrenagem continua aparecendo e sumindo — so que sem o pulinho. */
+  .gear {
+    transform: none;
   }
 }
 

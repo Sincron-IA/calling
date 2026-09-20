@@ -39,6 +39,24 @@ contextBridge.exposeInMainWorld('callingDesktop', {
    */
   resizeMainWindow: (size) => ipcRenderer.invoke('calling:resize-main', size),
 
+  /**
+   * Onde a janela da barra esta na tela — hoje so uma pergunta: ela encostou na
+   * borda direita? E o que decide se a engrenagem fica ao LADO da barra ou
+   * EMBAIXO dela. Quem sabe disso e o processo principal, que e quem posiciona
+   * a janela.
+   */
+  getMainEdge: () => ipcRenderer.invoke('calling:get-main-edge'),
+
+  /**
+   * Avisa quando essa resposta muda (arrastaram a janela, mudou a resolucao).
+   * Devolve a funcao de parar de ouvir.
+   */
+  onMainEdge: (handler) => {
+    const listener = (_event, state) => handler(state)
+    ipcRenderer.on('calling:main-edge', listener)
+    return () => ipcRenderer.removeListener('calling:main-edge', listener)
+  },
+
   /** Fecha o painel (o proprio painel chama isto). */
   closeConfigPanel: () => ipcRenderer.invoke('calling:close-config'),
 

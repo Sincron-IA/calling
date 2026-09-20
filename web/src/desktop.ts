@@ -51,12 +51,30 @@ export interface CallingDesktopApi {
    * canto. Quem reancora no canto de baixo a direita e o processo principal.
    */
   resizeMainWindow(size: { width: number; height: number }): Promise<void>
+  /** Onde a janela da barra esta, para a pagina decidir o desenho. */
+  getMainEdge(): Promise<MainEdgeState>
+  /**
+   * Ouve as mudancas disso (arrastar a janela, trocar de monitor). Devolve a
+   * funcao que para de ouvir.
+   */
+  onMainEdge(handler: (state: MainEdgeState) => void): () => void
   /** Fecha o painel de configuracao (chamado de dentro dele). */
   closeConfigPanel(): Promise<void>
   /** Traz a janela da barra para frente. */
   showMainWindow(): Promise<void>
   /** Encerra o Calling. */
   quit(): Promise<void>
+}
+
+/**
+ * O que o processo principal conta sobre a posicao da janela da barra.
+ *
+ * `rightEdge` e "a barra esta colada na borda direita da area util" — com a
+ * engrenagem ao lado ela ficaria espremida no canto, entao a pagina a desenha
+ * embaixo da barra.
+ */
+export interface MainEdgeState {
+  rightEdge: boolean
 }
 
 /** Retangulo de onde o painel deve sair. */

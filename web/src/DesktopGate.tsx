@@ -44,6 +44,8 @@ export function DesktopGate() {
   // Muda a cada conexao bem-sucedida: forca o App a nascer de novo lendo a
   // configuracao nova (lista de agentes, fluxo de chamadas recebidas).
   const [session, setSession] = useState(0)
+  // A barra encostou na borda direita da tela? Entao a engrenagem desce.
+  const [rightEdge, setRightEdge] = useState(false)
   const gearRef = useRef<HTMLButtonElement>(null)
 
   /* --------------------------------------------------- abertura do app ---- */
@@ -113,6 +115,33 @@ export function DesktopGate() {
     const observer = new ResizeObserver(report)
     observer.observe(root)
     return () => observer.disconnect()
+  }, [api])
+
+  /* ------------------------------------ a engrenagem ao lado ou embaixo --- */
+
+  /**
+   * Quem sabe ONDE a janela esta e o processo principal (ele e quem a ancora no
+   * canto). Perguntamos uma vez ao nascer e depois ficamos ouvindo: arrastar a
+   * barra ate a borda direita, ou trocar a resolucao, muda a resposta.
+   */
+  useEffect(() => {
+    let alive = true
+
+    void api
+      .getMainEdge()
+      .then((state) => {
+        if (alive && state) setRightEdge(state.rightEdge)
+      })
+      .catch(() => undefined)
+
+    const stop = api.onMainEdge((state) => {
+      if (state) setRightEdge(state.rightEdge)
+    })
+
+    return () => {
+      alive = false
+      stop?.()
+    }
   }, [api])
 
   /* ------------------------------------------------ conectar de verdade -- */
@@ -209,8 +238,16 @@ export function DesktopGate() {
     )
   }
 
+  /**
+   * Barra e engrenagem moram no MESMO bloco de proposito: e nele que o `:hover`
+   * (e o `:focus-within`, para quem anda de Tab) acende a engrenagem. Em repouso
+   * ela fica invisivel — a barra sozinha, como o Luiz pediu.
+   *
+   * `shell--stacked` e a barra colada na borda direita: a engrenagem desce para
+   * baixo da barra em vez de ficar espremida contra o canto da tela.
+   */
   return (
-    <>
+    <div className={`shell${rightEdge ? ' shell--stacked' : ''}`}>
       <App key={session} />
 
       <button
@@ -223,7 +260,7 @@ export function DesktopGate() {
       >
         <GearIcon />
       </button>
-    </>
+    </div>
   )
 }
 

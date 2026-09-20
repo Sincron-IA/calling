@@ -10,7 +10,7 @@
  * lendo o `.env`, como sempre.
  */
 
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 
 /** Em que passo do caminho estamos (os quadros 1, 2 e 3 do desenho). */
 export type ConnectPhase = 'form' | 'login' | 'validating'
@@ -73,15 +73,32 @@ export function ConnectScreen({
   const [url, setUrl] = useState(defaultBridgeUrl)
   const [secret, setSecret] = useState(defaultSecret)
 
+  /**
+   * O clique JA conta como "estou indo".
+   *
+   * Quem sabe que a janela do Cloudflare abriu e o pai (`phase`), e isso demora
+   * o tempo de uma ida ao processo principal. Nesse meio tempo o botao ficava
+   * com a cara de quem nao ouviu nada — e a pessoa clicava de novo. Este estado
+   * local cobre exatamente esse vao: ele acende no proprio `submit` e apaga
+   * quando o pai devolve o formulario (deu errado, cancelou ou nem abriu).
+   */
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (phase !== 'login') setSubmitting(false)
+  }, [phase, error])
+
   // Enquanto validamos, a tela inteira vira o quadro 3 — nada para mexer.
   if (phase === 'validating') return <ConnectingCard compact={compact} />
 
-  const busy = phase === 'login'
+  const waiting = phase === 'login'
+  const busy = waiting || submitting
   const ready = url.trim().length > 0 && secret.trim().length > 0
 
   function submit(event: FormEvent) {
     event.preventDefault()
     if (!ready || busy) return
+    setSubmitting(true)
     onConnect(url.trim(), secret)
   }
 
@@ -123,12 +140,18 @@ export function ConnectScreen({
           />
         </label>
 
-        <button className="connect__button" type="submit" disabled={!ready || busy}>
+        <button
+          className="connect__button"
+          type="submit"
+          disabled={!ready || busy}
+          aria-busy={busy || undefined}
+          aria-live="polite"
+        >
           {busy && <span className="connect__spinner" aria-hidden="true" />}
-          {busy ? 'Esperando o login…' : 'Conectar ao Cloudflare'}
+          {busy ? (waiting ? 'Esperando o login…' : 'Abrindo…') : 'Conectar ao Cloudflare'}
         </button>
 
-        {busy && (
+        {waiting && (
           <p className="connect__hint" role="status">
             Abri a janela do Cloudflare. Entre com o seu email por lá — quando terminar, eu sigo
             sozinho. Fechar aquela janela cancela.

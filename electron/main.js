@@ -52,6 +52,18 @@ const MAIN_START = { width: 360, height: 400 }
 const MAIN_GAP = 24
 
 /**
+ * Quanto espaco a engrenagem quer ter entre a barra e a borda DIREITA da area
+ * util para continuar ao lado dela. Abaixo disso a pagina passa a desenhar a
+ * engrenagem EMBAIXO da barra — senao ela ficaria espremida contra o canto da
+ * tela (e, no Windows, em cima da faixa que abre a central de notificacoes).
+ *
+ * O repouso da janela ja deixa `MAIN_GAP` (24px) de folga, maior que isto: o
+ * desenho aprovado — engrenagem ao lado — continua sendo o normal. Quem cai no
+ * caso de baixo e quem ARRASTOU a barra ate encostar na borda.
+ */
+const MAIN_EDGE_MARGIN = 16
+
+/**
  * O canto de BAIXO A DIREITA da janela principal, em coordenadas de tela.
  *
  * E este ponto que fica parado quando o conteudo muda de tamanho: a janela
@@ -131,6 +143,42 @@ function applyMainBounds(bounds) {
   if (!mainWindow || mainWindow.isDestroyed()) return
   mainApplied = bounds
   mainWindow.setBounds(bounds)
+  emitMainEdge()
+}
+
+/* ------------------------------------------- a barra encostou na borda? --- */
+
+/** Ultimo estado ja avisado a pagina: so falamos quando ele muda. */
+let mainEdgeSent = null
+
+/**
+ * De onde a barra mora ate a borda direita da area util, em px.
+ *
+ * A conta e sobre a ANCORA (o canto de baixo a direita da janela), nao sobre o
+ * retangulo atual: assim ela nao depende do tamanho do conteudo, que muda o
+ * tempo todo. Sem isso, mudar o desenho por causa da borda mudaria a largura,
+ * que mudaria a conta — e a engrenagem ficaria piscando de um lado para o
+ * outro.
+ */
+function mainRightGap() {
+  const anchor = mainAnchor || restingAnchor()
+  const display = screen.getDisplayNearestPoint(anchor) || screen.getPrimaryDisplay()
+  const { workArea } = display
+  return Math.round(workArea.x + workArea.width - anchor.x)
+}
+
+/** O que a pagina precisa saber sobre onde a janela esta. */
+function mainEdgeState() {
+  return { rightEdge: mainRightGap() < MAIN_EDGE_MARGIN }
+}
+
+/** Conta para a janela da barra, se algo mudou (a pagina decide o desenho). */
+function emitMainEdge() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const state = mainEdgeState()
+  if (mainEdgeSent && mainEdgeSent.rightEdge === state.rightEdge) return
+  mainEdgeSent = state
+  mainWindow.webContents.send('calling:main-edge', state)
 }
 
 /** Mostra a janela na primeira vez — e so na primeira. */
@@ -229,6 +277,15 @@ async function createWindow() {
       return
     }
     mainAnchor = { x: bounds.x + bounds.width, y: bounds.y + bounds.height }
+    // Arrastar a barra para o canto e justamente o que faz a engrenagem descer.
+    emitMainEdge()
+  })
+
+  // Recarregou (salvar pelo painel recarrega a barra): a pagina nova nao ouviu
+  // nada ainda, entao repetimos o recado.
+  win.webContents.on('did-finish-load', () => {
+    mainEdgeSent = null
+    emitMainEdge()
   })
 
   // Voltar para a barra e o mesmo que sair do painel — menu que fica aberto
@@ -366,6 +423,10 @@ function registerIpc() {
     resizeMainWindow(size)
   })
 
+  // A pagina pergunta ao nascer; depois disso quem fala primeiro somos nos
+  // (`calling:main-edge`), toda vez que a janela se mexe.
+  ipcMain.handle('calling:get-main-edge', () => mainEdgeState())
+
   ipcMain.handle('calling:close-config', () => closeConfigPanel())
 
   ipcMain.handle('calling:show-main', () => showMainWindow())
@@ -397,6 +458,10 @@ app.whenReady().then(() => {
       },
     }),
   )
+
+  // Mudou a resolucao, chegou/saiu um monitor, a barra de tarefas trocou de
+  // lado: a borda direita e outra, e a engrenagem pode ter que mudar de lugar.
+  screen.on('display-metrics-changed', () => emitMainEdge())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow()
