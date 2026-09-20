@@ -97,13 +97,19 @@ function openConfigPanel({ appUrl, anchor }) {
     ...bounds,
     show: false,
     frame: false,
+    // Mesmo motivo da janela da barra (ver `main.js`): sem `transparent` a
+    // janela e um retangulo opaco e o canto arredondado do cartao aparece
+    // recortado num fundo escuro. Aqui o cartao E a janela inteira, entao o
+    // retangulo sobrava exatamente nos quatro cantos.
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
     resizable: false,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    backgroundColor: '#14181d',
     title: 'Calling · conexão',
     webPreferences: {
       nodeIntegration: false,

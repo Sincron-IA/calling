@@ -178,11 +178,23 @@ async function createWindow() {
     // app com titulo e botoes — quem mostra/esconde e encerra e a bandeja, e a
     // faixa em volta do conteudo arrasta a janela (`-webkit-app-region: drag`).
     frame: false,
+    // Tirar a moldura NAO torna a janela transparente: sem isto ela continua um
+    // retangulo opaco da cor de `backgroundColor`, e como o cartao/barra tem
+    // canto arredondado sobrava um fundo escuro nos cantos e nas bordas — o
+    // "fundo preto com borda branca". Com `transparent`, o que se ve e so o que
+    // a pagina pinta.
+    transparent: true,
+    // Em janela transparente o fundo tem que ser transparente TAMBEM aqui: uma
+    // cor opaca aqui volta a preencher a janela inteira.
+    backgroundColor: '#00000000',
+    // A sombra e do SISTEMA, desenhada no RETANGULO da janela — justamente a
+    // "borda" clara em volta do conteudo arredondado no Windows. Quem faz a
+    // profundidade agora e o `box-shadow` do proprio cartao, no CSS.
+    hasShadow: false,
     resizable: false,
     maximizable: false,
     fullscreenable: false,
     autoHideMenuBar: true,
-    backgroundColor: '#0b0d10',
     title: 'Calling',
     webPreferences: {
       // A pagina segue sem Node: a ponte e so o preload, com quatro funcoes.

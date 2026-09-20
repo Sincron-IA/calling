@@ -799,6 +799,35 @@ body {
 }
 
 /* ------------------------------------------------------------------------ */
+/* Janela transparente: so o cartao pinta                                    */
+/*                                                                          */
+/* No navegador a pagina E o fundo. Nas duas janelas do app de desktop nao:  */
+/* elas nascem `transparent: true`, sem moldura, e o que se ve na tela e     */
+/* exatamente o que a pagina pinta. Qualquer cor em `html`, `body` ou        */
+/* `#root` volta a ser um RETANGULO opaco em volta do cartao arredondado —   */
+/* era esse o "fundo preto" em volta da barra.                               */
+/*                                                                          */
+/* Os tres (html, body, #root) precisam estar aqui: basta UM deles pintar    */
+/* para o retangulo voltar inteiro, porque o fundo do elemento raiz vira o   */
+/* fundo da janela toda.                                                     */
+/*                                                                          */
+/* A classe entra em `main.tsx`, so nas janelas do Electron: no navegador    */
+/* comum a pagina continua com o fundo de sempre.                            */
+/* ------------------------------------------------------------------------ */
+
+html.desktop-window,
+html.desktop-window body,
+html.desktop-window #root {
+  background: transparent;
+}
+
+/* O painel da engrenagem tem exatamente a altura do cartao (quem mede e o
+   `ConfigPanel`): nao ha pagina em volta para rolar nem para esticar. */
+body.desktop-panel {
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------------------ */
 /* A janela principal do app de desktop                                      */
 /*                                                                          */
 /* No navegador a pagina ocupa a tela toda e a barra se ancora no canto da   */
