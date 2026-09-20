@@ -330,3 +330,105 @@ Registre decisões técnicas, exceções e motivos.
 - Revisar em: no primeiro login real do Luiz (para o botão ocupado) e no
   primeiro uso com mouse de verdade, de preferência com mais de um monitor
   (para o caso da borda).
+
+
+## 2026-09-20 - Nesta janela, o que cresce tem que estar no fluxo
+
+- Contexto: clicar no chevron não abria a lista de agentes — aparecia uma faixa
+  cinza cortada no canto. `.menu` era `position: absolute`, e quem mede a
+  janela é o `getBoundingClientRect()` do `#root` (`DesktopGate.tsx`), que
+  **ignora filho posicionado fora da caixa de borda**. A janela não crescia, o
+  menu era pintado fora dela e o `overflow: hidden` cortava; o cinza era o
+  `box-shadow` vazando nos 8 px de padding.
+- Decisão: menu, recado, balão, campo de escrever e painel de aparência são
+  **filhos em fluxo** de `.bar`, que já é uma coluna alinhada à direita. A
+  janela cresce sozinha e a âncora de canto faz ela subir.
+- Alternativas: reportar a união dos retângulos (`#root` + overlays abertos).
+  Funciona, mas é uma conta nova a cada overlay novo, e `no-drag` e `:hover`
+  teriam de ser mantidos à mão em cada um.
+- Impacto: vale para TODO overlay futuro do Calling. Um `position: absolute`
+  acima do chip volta a ser o mesmo bug.
+- Revisar em: se a janela um dia deixar de ter o tamanho do conteúdo.
+
+## 2026-09-20 - O fundo do chip arrasta a janela
+
+- Contexto: a janela não se deixava arrastar. A única superfície com
+  `-webkit-app-region: drag` era o anel de 8 px de padding do `#root`, e todo
+  filho direto era `no-drag`. Oito pixels em volta de um chip de 42 px é um
+  alvo que o mouse não acerta.
+- Decisão: o fundo do chip e as três barrinhas da onda arrastam (elas não fazem
+  nada quando clicadas, então são a alça natural). Tudo o que responde a
+  clique volta a `no-drag`, um por um.
+- Impacto: no Windows, `drag` no pai engole o clique do filho se ninguém o
+  devolver — a lista de `no-drag` tem que crescer junto com a UI.
+- Revisar em: quando entrar um controle novo dentro do chip.
+
+## 2026-09-20 - A conversa escrita não aparece na tela, e isso é escolha
+
+- Contexto: o Calling ganhou recado escrito. A pergunta era quanto da conversa
+  mostrar acima da barra.
+- Decisão: **um balão só**, com a última resposta, que some em 15 s (e cujo
+  relógio para com o mouse em cima). Sem histórico, sem rolagem. Erro fica até
+  alguém fechar, porque erro pede decisão.
+- Alternativas: mini-thread rolável com as últimas trocas — rejeitada pelo
+  dono: a janela ficaria grande e a barra deixaria de ser quieta.
+- Impacto: a conversa completa vive na sessão do agente, não aqui. Nada do que
+  foi escrito ou respondido sobrevive ao fechamento do app.
+- Revisar em: se o dono pedir para ver o histórico. **Não "consertar" isso por
+  conta própria achando que faltou histórico.**
+
+## 2026-09-20 - A sessão de texto é do agente; a de voz, da ligação
+
+- Contexto: `claude.ts` guardava sessões por `callId:slug` e as jogava fora no
+  `end-call`. Recado escrito não tem "chamada".
+- Decisão: o escopo da sessão passa a ser explícito. Voz usa o `callId` e morre
+  no `end-call`; texto usa o **agente** e dura 24 h parado. Voz e texto do mesmo
+  agente compartilham a sessão de texto.
+- Impacto: dá para ligar continuando um assunto escrito antes. Desligar o
+  telefone não apaga a conversa escrita — há guarda explícita em `endCall`.
+- Revisar em: se 24 h se mostrar curto ou longo demais no uso real.
+
+## 2026-09-20 - A identidade do agente mora no workspace dele
+
+- Contexto: o dono quis trocar cor, nome e imagem dos agentes pelo app, **e**
+  que o agente pudesse mudar a si mesmo, com as duas coisas refletindo nos dois
+  lados. A identidade visual estava partida em três pedaços que não
+  conversavam: `agents.json` tinha `color`, o bridge o devolvia, `AgentSummary`
+  o declarava — e a UI pintava por POSIÇÃO na lista.
+- Decisão: nome, cor e imagem passam a morar em
+  `<workspace>/calling-identity.json`. O agente já tem permissão de escrita ali,
+  então "o agente se reconfigura" não precisa de rota nenhuma — ele edita o
+  próprio arquivo. O app edita o MESMO arquivo pelo bridge. `agents.json` fica
+  sendo o registro, e o `slug` a chave estável.
+- Alternativas: (a) guardar a identidade no `agents.json` — rejeitada, é
+  público no GitHub e o agente não o edita; (b) um banco no bridge — rejeitada,
+  o agente perderia a capacidade de se mudar sozinho.
+- Impacto: a volta (VPS → app) é uma leitura a cada 3 s, só enquanto houver
+  alguém olhando, empurrada pelo SSE que já existe. Primeira escrita em disco e
+  primeiro upload do projeto: a imagem é conferida pelos bytes, limitada a
+  512 kB, e o PNG é reescrito sem metadado.
+- Limitação honesta: não há recodificação de pixel (exigiria um codec no
+  servidor). O que há é assinatura conferida, PNG reescrito só com os pedaços
+  essenciais, teto de tamanho e `content-type` fixo + `nosniff` na volta.
+- Revisar em: se um formato além de PNG precisar da mesma limpeza de metadado —
+  aí entra um codec (`sharp`) e a decisão muda.
+
+## 2026-09-20 - Quem avisa o Telegram é o bridge, não o agente
+
+- Contexto: o dono perguntou se o pedido feito pelo Calling podia aparecer na
+  thread do agente. O caminho óbvio seria o agente avisar.
+- Decisão: **o bridge** manda, direto na Bot API, assim que o recado chega —
+  antes de o agente terminar de pensar. Dentro da sessão headless a tool de
+  reply do Telegram não existe (é o que as Regras Zero de canal em
+  `identity.ts` já dizem, e elas nasceram porque o agente tentava chamá-la e
+  errava a resposta).
+- Alternativas: (a) devolver a tool do Telegram à sessão headless — reabriria
+  exatamente o bug que a Regra Zero resolve; (b) entregar na sessão viva pelos
+  sockets `/tmp/cc-socks/*.sock` — rejeitada em 2026-09-19 e **não reaberta**
+  aqui.
+- Impacto: só recado de texto ecoa; turno de voz não, encheria a thread. Agente
+  sem credencial não ecoa e a mensagem dele segue normalmente. Telegram fora do
+  ar nunca atrasa a resposta ao dono.
+- Pendência: de qual bot e de qual chat cada agente fala ainda não foi
+  levantado na VPS. Sem isso o eco fica desligado em silêncio.
+- Revisar em: quando as credenciais existirem e o eco rodar de verdade.

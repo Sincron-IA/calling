@@ -138,3 +138,83 @@ Os dois numeros pioram com `--model opus` e melhoram com `haiku`
 - Fazer o agente resumir a ligacao no `working-memory.md` ao desligar, para a
   conversa falada alimentar a memoria de verdade.
 - Streaming: hoje a resposta so e falada quando o agente termina de escrever.
+
+
+## O recado escrito (`/api/message`)
+
+Além da ligação, o Calling manda **recado escrito**. Não é `/api/ask`: aquela
+rota é a tool do caminho de voz e amarra a sessão ao `callId` da ligação.
+
+A diferença que importa é o **tempo de vida da sessão**:
+
+| Canal | Escopo da sessão | Morre quando |
+|---|---|---|
+| Voz | o `callId` da ligação | `POST /api/end-call` |
+| Texto | o **agente** | 24 h parado |
+
+Texto não tem "chamada". Se a sessão morresse a cada mensagem, cada frase
+começaria do zero e o dono teria que recontar o contexto toda vez. E voz e
+texto do mesmo agente **compartilham** a sessão de texto — dá para ligar
+continuando um assunto escrito dez minutos antes.
+
+A identidade também muda: `buildTextIdentity` troca a Regra Zero do canal de
+voz por uma do canal de texto (resposta curta, sem markdown pesado — o balão na
+tela é pequeno e não rola). A trava contra a tool de reply do Telegram continua
+nas duas.
+
+## A cara do agente mora com o agente
+
+Nome de exibição, cor e imagem de cada agente ficam em
+`<workspace>/calling-identity.json`, **não** no `agents.json`:
+
+```json
+{ "name": "Ivo", "color": "#60a5fa", "avatar": "calling-avatar.png" }
+```
+
+É essa escolha que faz as duas direções funcionarem com uma peça só:
+
+- **o agente muda a si mesmo** escrevendo nesse arquivo — ele já tem permissão
+  ali, então não precisa de rota, de token nem de API;
+- **o app muda** por `PUT /api/agents/:slug/identity`, que escreve no MESMO
+  arquivo.
+
+O `agents.json` continua sendo o **registro** (slug, workspace, enabled) e o
+`slug` continua sendo a chave estável: trocar o nome de exibição não quebra
+ligação, toque nem sessão de texto em curso.
+
+Quando o arquivo muda na VPS, o bridge percebe (uma leitura a cada 3 s, só
+enquanto houver alguém olhando) e empurra um evento `agents` pelo mesmo fluxo
+SSE das chamadas recebidas. A barra se atualiza sozinha.
+
+A imagem é servida por `GET /api/agents/:slug/avatar`, com `content-type` de
+uma lista fechada e `nosniff`. O que sobe pelo app é conferido pelos **bytes**
+(assinatura do arquivo, nunca a extensão nem o `content-type` declarado), tem
+teto de 512 kB, e — no caso de PNG — é reescrito só com os pedaços essenciais,
+descartando todo metadado. SVG não entra: é documento que executa, não figura.
+
+## O eco na thread do Telegram
+
+O recado escrito também aparece na thread do agente, citado em blockquote:
+
+```
+📞 Pedido pelo Calling
+<blockquote>dá uma olhada no deploy de ontem</blockquote>
+Tô cuidando disso.
+```
+
+**Quem manda é o bridge, não o agente.** Dentro da sessão headless a tool de
+reply do Telegram não existe — as Regras Zero de canal em `identity.ts` dizem
+isso com todas as letras, e elas nasceram justamente porque o agente tentava
+chamá-la e a resposta saía errada. Então o eco sai de `server/src/telegram.ts`,
+direto na Bot API, **antes** de o agente terminar de pensar.
+
+Só recado de texto ecoa. Turno de voz não: encheria a thread.
+
+Credenciais no `.env` privado da VPS (`CALLING_TELEGRAM_TOKEN_<SLUG>` ou
+`CALLING_TELEGRAM_BOT_TOKEN`, mais `CALLING_TELEGRAM_CHAT_<SLUG>`). Agente sem
+credencial não ecoa e o recado dele segue normalmente — dá para ligar um agente
+de cada vez. Telegram lento ou fora do ar nunca atrasa a resposta ao dono.
+
+> **Pendência:** de qual bot e de qual chat cada agente fala ainda não foi
+> levantado na VPS. Enquanto as variáveis não existirem, o eco fica desligado
+> em silêncio (com uma linha `telegram_skipped` no log).
