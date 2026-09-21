@@ -22,6 +22,7 @@ import {
 import { askAgent, drainCallTurns, endCall, sendText } from './claude.js'
 import { createLiveToken } from './gemini.js'
 import { completeEcho, echoToThread } from './telegram.js'
+import { backfillAvatars } from './telegram-avatar.js'
 import {
   attachStream,
   finish,
@@ -729,4 +730,26 @@ app.listen(PORT, HOST, () => {
   )
   console.log(`[calling] origens liberadas: ${allowlist.effective.join(', ')}`)
   console.log(`[calling] log em ${logDestination} (NDJSON, 5 arquivos x 5MB)`)
+
+  /*
+   * A CARA QUE FALTA VEM DO PROPRIO BOT.
+   *
+   * Agente sem imagem ganha, na subida, a foto de perfil do bot dele no
+   * Telegram — pelo token que ele ja tem para o eco na thread. Quem ja tem
+   * imagem nao e tocado.
+   *
+   * Sem `await`, e DEPOIS do `listen`: o bridge ja esta atendendo request
+   * quando isto comeca, entao seis idas ao Telegram nao adiam nada. Quando uma
+   * imagem entra no disco, a volta de relogio da identidade (`IDENTITY_POLL_MS`)
+   * avisa a UI sozinha — e o `catch` existe so para que um erro que escape nao
+   * vire uma rejeicao nao tratada no journal.
+   */
+  void backfillAvatars(loadAgents()).catch((err: Error) => {
+    logEvent(
+      'warn',
+      'avatar_backfill_failed',
+      { error: err.message },
+      `o backfill de avatares parou: ${err.message}`,
+    )
+  })
 })

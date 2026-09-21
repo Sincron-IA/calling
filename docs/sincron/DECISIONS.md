@@ -579,3 +579,51 @@ Registre decisões técnicas, exceções e motivos.
     cortado pela metade — a mesma armadilha que plan-001 ja tinha resolvido para
     o menu.
 - Revisar em: se a fila passar a precisar sobreviver ao fechar do app.
+
+## 2026-09-20 - O avatar do agente vem do bot dele, não da mão de ninguém
+
+- Contexto: os seis bots do Telegram já têm foto de perfil posta pelo BotFather
+  — a cara de cada agente já existia e já estava certa. Mesmo assim, para ela
+  aparecer no Calling alguém tinha que baixar a imagem na mão e subir pelo app,
+  ou escrever `calling-identity.json` a unha. Duas verdades para a mesma coisa,
+  e a do Calling sempre atrasada em relação à do Telegram.
+- Decisão: um **backfill de partida** (`server/src/telegram-avatar.ts`). Quando
+  o bridge sobe, todo agente que está SEM imagem ganha a foto de perfil do
+  próprio bot, em quatro chamadas à Bot API (`getMe` → `getUserProfilePhotos`
+  → `getFile` → download), pegando a MAIOR resolução da foto mais recente.
+- Credencial: a que já existe. `tokenFor()` saiu de `telegram.ts` exportada e é
+  a mesma função que o eco na thread usa — o token é o
+  `CALLING_TELEGRAM_TOKEN_<SLUG>` que já estava no `.env` dos seis. **Nenhum
+  segredo novo, nenhuma variável nova.** Duplicar a regra de nome da variável
+  num arquivo novo seria criar um segundo lugar para ela ficar errada.
+- Só preenche o que falta, nunca substitui: `avatarPath(agent) === ''` é a
+  única condição. Imagem posta pelo dono no app — ou pelo próprio agente
+  escrevendo no workspace dele — não é tocada por este caminho, nem no primeiro
+  boot nem em nenhum depois. Trocar ou apagar uma imagem que já existe continua
+  sendo exclusividade do `PUT /api/agents/:slug/identity`, que é a porta com
+  gente do outro lado. Por isso também não há rota nova aqui: um endpoint de
+  "buscar de novo" seria justamente o jeito de sobrescrever sem querer.
+- Nome e cor ficam como estavam. O `writeIdentity` grava os três campos juntos,
+  então o backfill passa de volta o `name`/`color` EFETIVOS (`agentIdentity`),
+  que já caem no `agents.json`. O backfill preenche a imagem e mais nada.
+- Os bytes passam pelo `prepareAvatar`, o mesmo crivo de uma imagem que o dono
+  sobe: assinatura conferida, teto de 512 kB, extensão vinda dos bytes e não do
+  `file_path`. Download truncado ou página de erro no lugar da figura morre ali
+  — "a origem é confiável" não é motivo para pular a validação, porque o que
+  falha aqui é a rede, não a intenção do Telegram.
+- Alternativas: (a) buscar a cada request de `/api/agents` — rejeitada, seria
+  ir ao Telegram por causa de um refresh de tela; (b) uma volta de relógio
+  periódica — rejeitada, a foto de um bot muda uma vez por ano e o disco já tem
+  a resposta; (c) sobrescrever sempre, deixando o Telegram como fonte única —
+  rejeitada, apagaria a escolha de quem subiu uma imagem pelo app; (d) um
+  arquivo novo com a lógica de nome da variável copiada — rejeitada, ver acima.
+- Impacto: dispara DEPOIS do `app.listen`, sem `await`, as seis juntas em
+  `Promise.allSettled`. O bridge já está atendendo request quando isto começa,
+  então Telegram lento não adia boot nenhum; cada busca tem `AbortController` de
+  8 s, como o eco. Nada lança: falta de token, bot sem foto, rede caída ou
+  resposta estranha viram uma linha `avatar_fetch_failed` (agente + motivo,
+  nunca o token) e o bridge segue igual. Quando a imagem entra no disco, a volta
+  de relógio da identidade avisa a UI sozinha — na validação, o app aberto do
+  dono trocou as seis caras sem recarregar.
+- Revisar em: se algum bot trocar de foto e alguém quiser a nova sem apagar a
+  antiga na mão — aí é a hora de discutir um refresh manual, e não antes.

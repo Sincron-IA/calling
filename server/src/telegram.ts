@@ -57,7 +57,7 @@ export interface EchoMark {
 
 const NO_ECHO: EchoMark = { ok: false, chatId: '', messageId: 0 }
 
-function envName(prefix: string, slug: string): string {
+export function envName(prefix: string, slug: string): string {
   return `${prefix}${slug.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`
 }
 
@@ -68,8 +68,13 @@ function envName(prefix: string, slug: string): string {
  * vale um token comum a todos (`CALLING_TELEGRAM_BOT_TOKEN`). Segredo nunca
  * mora no `agents.json`, que e publico no GitHub — mesma regra dos tokens de
  * toque que ja existem.
+ *
+ * Exportada porque o eco NAO e o unico uso do bot daquele agente: o backfill de
+ * avatar (`telegram-avatar.ts`) pega a foto de perfil pelo MESMO token. Uma
+ * fonte so para "onde mora a credencial deste agente" — duplicar a regra de
+ * nome de variavel seria criar um segundo lugar para ela ficar errada.
  */
-function tokenFor(slug: string): string {
+export function tokenFor(slug: string): string {
   return (
     process.env[envName('CALLING_TELEGRAM_TOKEN_', slug)] ||
     process.env.CALLING_TELEGRAM_BOT_TOKEN ||
