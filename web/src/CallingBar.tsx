@@ -31,6 +31,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -56,6 +57,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
 import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
+import { Input } from '@/components/ui/input'
 import {
   InputGroup,
   InputGroupAddon,
@@ -72,6 +74,7 @@ import {
   ItemTitle,
 } from '@/components/ui/item'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
+import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
@@ -172,12 +175,17 @@ export interface CallingBarProps {
   onCall: (slug: string) => void
   /** Desligar/cancelar a ligacao em curso. */
   onHangUp: () => void
-  /** Resolver o item pendente SEM abrir voz. */
-  onApprove: (call: IncomingCall) => void
+  /**
+   * Resolver o item pendente SEM abrir voz.
+   *
+   * `reply` e o recado que o dono escreveu no cartao, quando escreveu algum: a
+   * barra so carrega o texto daqui ate quem trata a decisao.
+   */
+  onApprove: (call: IncomingCall, reply?: string) => void
   /** Atender por voz (abre a ligacao de verdade). */
   onAnswer: (call: IncomingCall) => void
   /** Recusar — quem trata isso e responsavel por cair para o Telegram. */
-  onDecline: (call: IncomingCall, cause: DeclineCause) => void
+  onDecline: (call: IncomingCall, cause: DeclineCause, reply?: string) => void
   /** Recado curto acima da barra (hoje: "conectou"). Vazio = nada na tela. */
   notice?: string
   /** Chamado quando o recado sai — por tempo ou por clique. */
@@ -332,9 +340,10 @@ interface IncomingCardProps {
   agentName: string
   color: string
   avatar?: string
-  onApprove: (call: IncomingCall) => void
+  /** `reply`: o recado que o dono escreveu no cartao, quando escreveu algum. */
+  onApprove: (call: IncomingCall, reply?: string) => void
   onAnswer: (call: IncomingCall) => void
-  onDecline: (call: IncomingCall, cause: DeclineCause) => void
+  onDecline: (call: IncomingCall, cause: DeclineCause, reply?: string) => void
   /** Cartao dentro da lista expandida: sem o brilho pulsante proprio. */
   inline?: boolean
 }
@@ -349,9 +358,28 @@ function IncomingCard({
   onDecline,
   inline = false,
 }: IncomingCardProps) {
+  /* O CAMPO DE RESPOSTA.
+     Aprovar e recusar sao gestos mudos: o agente descobre o desfecho e nada
+     mais. O teclado abre uma linha para o dono dizer POR QUE — e so isso vai
+     junto na decisao. Atender por voz nao usa: ali ele responde falando. */
+  const [replyOpen, setReplyOpen] = useState(false)
+  const [replyText, setReplyText] = useState('')
+  const replyId = useId()
+  const replyRef = useRef<HTMLInputElement | null>(null)
+
+  // Abriu, o cursor ja esta la: o clique no teclado e o pedido de escrever, nao
+  // o pedido de ver um campo para depois clicar nele.
+  useEffect(() => {
+    if (replyOpen) replyRef.current?.focus()
+  }, [replyOpen])
+
+  /* O que segue com a decisao: so existe se o campo estiver ABERTO e com texto
+     de verdade. Fechado (ou vazio) o payload e exatamente o de sempre. */
+  const reply = replyOpen ? replyText.trim() || undefined : undefined
+
   // Handler isolado de proposito: se um dia o "Aprovar" precisar de confirmacao
   // (duplo clique, undo), e aqui dentro que ela entra, sem mexer no resto.
-  const approve = useCallback(() => onApprove(call), [onApprove, call])
+  const approve = useCallback(() => onApprove(call, reply), [onApprove, call, reply])
 
   // Quanto ainda falta para o toque morrer sozinho. Quem manda e o SERVIDOR
   // (`expiresAt`); a constante local so cobre o caso de ele nao ter mandado.
@@ -362,13 +390,18 @@ function IncomingCard({
     <Panel
       role="group"
       aria-label={`Chamada de ${agentName}`}
-      className={cn(!inline && 'ring-1', RAIL)}
+      className={cn('group/incoming', !inline && 'ring-1', RAIL)}
       style={
         {
           '--agent': color,
-          borderColor: `color-mix(in oklch, ${color}, transparent 55%)`,
+          /* O CARTAO PARA DE BRILHAR.
+             A borda na cor cheia e o halo grande faziam o cartao vazar para
+             fora de si mesmo — na tela do Luiz parecia um corte de luz em volta
+             da caixa. A cor continua dizendo de quem e o toque; ela so nao grita
+             mais. */
+          borderColor: `color-mix(in oklch, ${color}, transparent 82%)`,
           // O brilho e do CARTAO destacado; na lista ele viraria seis brilhos.
-          boxShadow: inline ? undefined : `0 0 0 1px ${color}22, 0 18px 40px -20px ${color}55`,
+          boxShadow: inline ? undefined : `0 0 0 1px ${color}0d, 0 10px 22px -18px ${color}4d`,
         } as CSSProperties
       }
     >
@@ -379,9 +412,70 @@ function IncomingCard({
         <ItemContent>
           <ItemTitle style={{ color }}>{agentName}</ItemTitle>
         </ItemContent>
+        <ItemActions>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                /* Escondido ate o mouse chegar no CARTAO (nao no proprio
+                   botao — um alvo invisivel nao se acha). Fade + escala de uma
+                   passada so: nada aqui fica se mexendo sozinho. */
+                className={cn(
+                  'transition-[opacity,transform,color] duration-200 ease-out focus-visible:scale-100 focus-visible:opacity-100',
+                  'group-hover/incoming:scale-100 group-hover/incoming:opacity-100',
+                  replyOpen ? 'scale-100 opacity-100' : 'text-muted-foreground scale-[0.8] opacity-0',
+                )}
+                // Aceso na cor do agente — e so o traco do icone, sem chip atras.
+                style={replyOpen ? { color } : undefined}
+                // `aria-pressed` e nao `aria-expanded`: o `ghost` pinta um fundo
+                // no expandido, e o desenho aprovado nao tem fundo nenhum.
+                aria-pressed={replyOpen}
+                aria-controls={replyId}
+                onClick={() => setReplyOpen((open) => !open)}
+                aria-label={`Escrever uma resposta para ${agentName}`}
+              >
+                <KeyboardIcon />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Responder por escrito</TooltipContent>
+          </Tooltip>
+        </ItemActions>
       </Item>
 
       <p className="text-foreground px-3 pb-2.5 text-sm leading-snug">{call.reason}</p>
+
+      {/* A ALTURA E ANIMADA PELO GRID.
+          `0fr` -> `1fr` deixa o proprio conteudo dizer o tamanho, e o cartao
+          (e a janela, que veste o conteudo) cresce junto, sem pulo e sem
+          ninguem medindo pixel em JS. O filho precisa de `min-h-0` +
+          `overflow-hidden`, senao ele nao aceita ser espremido ate zero. */}
+      <div
+        className={cn(
+          'grid transition-[grid-template-rows] duration-200 ease-out',
+          replyOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="px-2.5 pb-2.5">
+            <Label htmlFor={replyId} className="sr-only">
+              Resposta para {agentName}
+            </Label>
+            <Input
+              id={replyId}
+              ref={replyRef}
+              value={replyText}
+              onChange={(event) => setReplyText(event.target.value)}
+              placeholder="Escreva algo pro agente"
+              // Fechado ele continua no layout (e o que da a animacao), entao
+              // sai da ordem do Tab para nao virar uma parada invisivel.
+              tabIndex={replyOpen ? undefined : -1}
+              maxLength={500}
+              className="h-7 text-[0.8rem]"
+            />
+          </div>
+        </div>
+      </div>
 
       <div className="flex items-center gap-1 px-2.5 pb-2.5">
         <Button size="sm" className="flex-1" onClick={approve}>
@@ -407,7 +501,7 @@ function IncomingCard({
               <Button
                 variant="outline"
                 size="icon-sm"
-                onClick={() => onDecline(call, 'manual')}
+                onClick={() => onDecline(call, 'manual', reply)}
                 aria-label={`Recusar a chamada de ${agentName}`}
               >
                 <XIcon />

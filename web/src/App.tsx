@@ -323,16 +323,34 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
 
   /* ------------------------------------------------ recado escrito -------- */
 
-  /** Abre o campo endereçado a um agente, sem tocar na ligacao em curso. */
-  const write = useCallback((slug: string) => {
-    /* O CHIP SEGUE QUEM RECEBE.
-       Ligar ja trocava o agente do chip (`startCall`); escrever nao trocava, e
-       o resultado era a barra dizendo "Automa" enquanto o campo aberto acima
-       dela dizia "Para Ivo". Quem se escreve agora e com quem se vai falar de
-       novo em seguida — e o chip existe para ser esse atalho. */
-    setCurrent(slug)
-    setCompose({ agentSlug: slug, draft: '', busy: false })
-  }, [])
+  /**
+   * Abre o campo endereçado a um agente, sem tocar na ligacao em curso — e
+   * FECHA se ele ja estiver aberto para esse mesmo agente.
+   *
+   * O avatar do chip e um botao so: ele abria o campo e nao tinha como
+   * desfazer o gesto: quem clicasse sem querer tinha que ir ate o X. Agora o
+   * mesmo clique vai e volta.
+   */
+  const write = useCallback(
+    (slug: string) => {
+      /* Fechar nao e trocar de destinatario: o chip fica com quem estava. O
+         `compose.agentSlug` aqui segue o mesmo criterio do `sendCompose`, que
+         ja le esse campo para saber para quem esta escrevendo. */
+      if (compose.agentSlug === slug) {
+        setCompose({ agentSlug: '', draft: '', busy: false })
+        return
+      }
+
+      /* O CHIP SEGUE QUEM RECEBE.
+         Ligar ja trocava o agente do chip (`startCall`); escrever nao trocava, e
+         o resultado era a barra dizendo "Automa" enquanto o campo aberto acima
+         dela dizia "Para Ivo". Quem se escreve agora e com quem se vai falar de
+         novo em seguida — e o chip existe para ser esse atalho. */
+      setCurrent(slug)
+      setCompose({ agentSlug: slug, draft: '', busy: false })
+    },
+    [compose.agentSlug],
+  )
 
   const closeCompose = useCallback(() => {
     setCompose({ agentSlug: '', draft: '', busy: false })
@@ -371,9 +389,14 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
 
   /* ------------------------------------------ chamadas recebidas ---------- */
 
-  /** Resolve o item na hora, sem abrir voz nenhuma. */
-  const onApprove = useCallback((incomingCall: IncomingCall) => {
-    approveIncoming(incomingCall)
+  /**
+   * Resolve o item na hora, sem abrir voz nenhuma.
+   *
+   * `reply` e o recado que o Luiz escreveu no cartao do toque, se escreveu:
+   * segue como veio, palavra por palavra, ate o agente que ligou.
+   */
+  const onApprove = useCallback((incomingCall: IncomingCall, reply?: string) => {
+    approveIncoming(incomingCall, reply)
     dismissIncoming(incomingCall.id)
   }, [])
 
@@ -395,10 +418,13 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
    * agente que ligou: e ele quem decide avisar no Telegram — o front nao manda
    * mensagem nenhuma.
    */
-  const onDecline = useCallback((incomingCall: IncomingCall, cause: DeclineCause) => {
-    declineIncoming(incomingCall, cause)
-    dismissIncoming(incomingCall.id)
-  }, [])
+  const onDecline = useCallback(
+    (incomingCall: IncomingCall, cause: DeclineCause, reply?: string) => {
+      declineIncoming(incomingCall, cause, reply)
+      dismissIncoming(incomingCall.id)
+    },
+    [],
+  )
 
   /**
    * A cor vem do BRIDGE — que a leu do arquivo de identidade do agente, com o
