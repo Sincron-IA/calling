@@ -218,3 +218,43 @@ de cada vez. Telegram lento ou fora do ar nunca atrasa a resposta ao dono.
 > **Pendência:** de qual bot e de qual chat cada agente fala ainda não foi
 > levantado na VPS. Enquanto as variáveis não existirem, o eco fica desligado
 > em silêncio (com uma linha `telegram_skipped` no log).
+
+## Checklist de onboarding de um agente novo no Calling
+
+Ligar um agente novo (ou conferir se um já ligado está completo) mexe em
+**dois lugares diferentes** — o `.env` do bridge (na VPS, um arquivo só,
+compartilhado) e o ambiente do próprio agente (`<workspace>/.dgclaw/config.sh`
+ou equivalente, um por agente). Confundir os dois foi a causa de um furo real
+em 21/09/2026: o Flow (e os outros 4) apareciam prontos porque tudo que o
+**bridge** precisa já existia, mas nenhum agente tinha o próprio token para
+**ligar por iniciativa própria** — só dava para ser chamado, não para chamar.
+
+| # | O quê | Onde mora | Direção que habilita |
+|---|---|---|---|
+| 1 | `agents.json`: entrada com `slug`, `name`, `workspace`, `color`, `enabled: true` | Repo (público) | app mostra o agente na lista |
+| 2 | `CALLING_RING_TOKEN_<SLUG>` | `.env` do bridge | dono → identifica quem liga (validação) |
+| 2b | **o mesmo valor**, copiado | ambiente do PRÓPRIO agente (ex. `config.sh`) | agente → liga pro dono (`POST /api/ring`) |
+| 2c | `CALLING_BRIDGE_URL` (`http://127.0.0.1:8787`, o bridge só escuta local) | ambiente do PRÓPRIO agente | agente → sabe pra onde mandar o `POST /api/ring` |
+| 3 | `CALLING_TELEGRAM_TOKEN_<SLUG>` + `CALLING_TELEGRAM_CHAT_<SLUG>` | `.env` do bridge | eco do recado escrito na thread do Telegram |
+| 4 | `<workspace>/calling-identity.json` | workspace do agente | nome/cor/avatar na UI (o próprio agente escreve) |
+| 5 | slug na lista `CALLING_WAKE_AGENTS` | `.env` do bridge | dono liga/manda recado → a sessão viva do agente acorda (Fase 1, `wake.ts`) |
+
+Os itens 1, 2, 3 e 5 são **só o bridge** — um humano ou agente com acesso ao
+`.env` da VPS resolve todos de uma vez, e dá pra conferir no log de boot:
+
+```
+[calling] agentes: automa, ivo, ...
+[calling] podem tocar (credencial propria): automa, ivo, ...
+[calling] acordam a sessao viva (+ log de conteudo): automa, ivo, ...
+```
+
+O item 2b é o único que **não** dá pra resolver de um lugar só: o valor sai do
+`.env` do bridge, mas o destino é o ambiente de cada agente — alguém com
+acesso aos dois lados precisa copiar. Sem o 2b, tudo que envolve "o dono fala
+com o agente" funciona (voz, texto, eco, wake); só "o agente liga pro dono"
+fica quebrado, e do jeito mais confuso possível: sem erro nenhum até o agente
+de fato tentar.
+
+**Teste rápido pra saber se falta o 2b:** de dentro da sessão do agente,
+`echo $CALLING_RING_TOKEN_<SLUG>` (maiúsculo) tem que devolver o mesmo valor
+que está no `.env` do bridge para aquele slug. Vazio = falta distribuir.

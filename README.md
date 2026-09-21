@@ -157,11 +157,19 @@ falar com voce por voz), `declined` (recusou) e `no_answer` (nao respondeu a
 tempo). O que fazer com cada um e **decisao do agente que ligou** — inclusive
 avisar no Telegram, que e trabalho dele, nao do Calling.
 
-A identidade vem da **credencial**, nao de um nome declarado: cada agente tem o
-seu `CALLING_RING_TOKEN_<SLUG>` no `.env` privado da VPS, e o bridge descobre
-quem esta ligando pelo segredo apresentado. Nao da para um agente se passar por
-outro. O `CALLING_SHARED_SECRET` continua sendo outra coisa: e o do app no
-browser.
+A identidade vem da **credencial**, nao de um nome declarado: o bridge descobre
+quem esta ligando pelo segredo apresentado, procurando entre os
+`CALLING_RING_TOKEN_<SLUG>` que ELE tem no proprio `.env`. Nao da para um
+agente se passar por outro. O `CALLING_SHARED_SECRET` continua sendo outra
+coisa: e o do app no browser.
+
+> **Cuidado com essa frase** — "o bridge tem o token no `.env` dele" nao quer
+> dizer que o AGENTE ja pode ligar. Pra chamar `POST /api/ring` de dentro da
+> propria sessao, o agente precisa ter **esse mesmo valor** disponivel no
+> PROPRIO ambiente (ex.: `config.sh`), pra mandar como `Bearer`. O `.env` do
+> bridge e onde o valor e VALIDADO; o ambiente do agente e de onde ele e
+> ENVIADO — sao dois lugares diferentes, e faltar o segundo foi um furo real
+> (ver checklist de onboarding em `docs/AGENT-BRIDGE.md`).
 
 ## Quando o agente so quer FALAR (recado empurrado)
 
