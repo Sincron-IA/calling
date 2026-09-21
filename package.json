@@ -16,7 +16,8 @@
     "build:server": "npm run build --workspace=server",
     "typecheck": "npm run typecheck --workspace=web && npm run typecheck --workspace=server",
     "start:server": "npm run start --workspace=server",
-    "electron": "npm run start --workspace=electron"
+    "electron": "npm run start --workspace=electron",
+    "electron:build": "npm run build && npm run build --workspace=electron"
   },
   "engines": {
     "node": ">=20"

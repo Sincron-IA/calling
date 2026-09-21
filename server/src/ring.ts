@@ -37,6 +37,13 @@ export interface PendingRing {
 export interface Resolution {
   outcome: RingOutcome
   resolvedAt: number
+  /**
+   * Recado curto que o dono manda de volta ao aprovar/recusar sem voz. Texto
+   * opaco: o bridge so carrega de la ate o agente que ligou. So existe no
+   * caminho do dedo (`approved`/`declined`) — quem atende por voz responde
+   * falando, pela sessao de voz.
+   */
+  reply?: string
 }
 
 interface Entry {
@@ -221,6 +228,7 @@ export function ring(input: RingInput): RingHandle {
 export function finish(
   id: string,
   outcome: RingOutcome,
+  reply?: string,
 ): (Resolution & { applied: boolean }) | null {
   const entry = pending.get(id)
   if (!entry) {
@@ -232,10 +240,14 @@ export function finish(
   clearTimeout(entry.timer)
   pending.delete(id)
 
-  const resolution: Resolution = { outcome, resolvedAt: Date.now() }
+  // Campo ausente quando nao ha recado: quem le so ve `reply` se houver texto.
+  const trimmed = reply?.trim()
+  const resolution: Resolution = trimmed
+    ? { outcome, resolvedAt: Date.now(), reply: trimmed }
+    : { outcome, resolvedAt: Date.now() }
   rememberResolved(id, resolution)
   entry.settle(resolution)
-  broadcast('resolved', { id, outcome })
+  broadcast('resolved', trimmed ? { id, outcome, reply: trimmed } : { id, outcome })
   return { ...resolution, applied: true }
 }
 

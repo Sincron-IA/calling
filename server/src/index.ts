@@ -260,17 +260,30 @@ const NOTIFY_MAX_LENGTH = 2000
  * Nao e o `/api/ring`: aquele TOCA e fica pendurado esperando uma decisao. Este
  * so fala e vai embora — um recado na tela, sem botao e sem resposta.
  *
- * Protegido pelo MESMO segredo do app (nao pela credencial de toque): quem usa
- * esta rota ja esta dentro da maquina, com o `.env` na mao.
+ * Autenticado pela MESMA credencial do toque (`CALLING_RING_TOKEN_<SLUG>`), e
+ * nao pelo segredo do app. A regra antiga dizia que "quem usa esta rota ja
+ * esta dentro da maquina, com o `.env` na mao" — e isso nao e verdade nesta
+ * arquitetura: cada agente roda isolado no seu proprio workspace e nao enxerga
+ * o `.env` privado do bridge. Exigir o segredo do app obrigaria cada agente a
+ * carregar uma SEGUNDA credencial so para isto, fazendo o mesmo papel da que
+ * ele ja tem para tocar.
+ *
+ * E pior do que a friccao: o segredo do app nao diz QUEM esta falando, entao o
+ * `:slug` da URL era um nome auto-declarado — qualquer portador do segredo
+ * podia empurrar um recado no nome de qualquer agente. A credencial de toque
+ * prova identidade de verdade (ela sai do segredo, nunca de um nome afirmado),
+ * por isso quem fala aqui e `req.ringAgent`, e o `:slug` da URL so sobrevive
+ * como conferencia.
  *
  * E NUNCA acorda ninguem. Se acordasse, um recado empurrado pela sessao viva
  * voltaria para ela mesma, e o ciclo nao teria fim.
  */
-app.post('/api/agents/:slug/notify', requireSecret, (req, res) => {
+app.post('/api/agents/:slug/notify', requireAgentToken, (req, res) => {
+  // A identidade vem do TOKEN, nunca do caminho da URL.
+  const agent = req.ringAgent!
   const slug = String(req.params.slug || '')
-  const agent = findAgent(slug)
-  if (!agent) {
-    res.status(400).json({ error: 'Agente desconhecido.' })
+  if (slug !== agent.slug) {
+    res.status(400).json({ error: 'O slug na URL nao bate com o agente autenticado pelo token.' })
     return
   }
 
@@ -559,15 +572,20 @@ app.post('/api/ring', requireAgentToken, async (req, res) => {
       callId: handle.call.id,
       outcome: resolution.outcome,
       resolvedAt: resolution.resolvedAt,
+      // Mesmo criterio do motivo: o recado do dono nao vai para o log.
+      hasReply: Boolean(resolution.reply),
     },
     `toque ${handle.call.id}: ${resolution.outcome}`,
   )
 
   if (res.writableEnded || res.destroyed) return
+  // `reply` so aparece quando existe texto: quem ja lia os tres campos de
+  // sempre nao ve campo novo vazio nem `undefined` no JSON.
   res.json({
     callId: handle.call.id,
     outcome: resolution.outcome,
     resolvedAt: resolution.resolvedAt,
+    ...(resolution.reply ? { reply: resolution.reply } : {}),
   })
 })
 
@@ -653,13 +671,30 @@ const ACTIONS: Record<string, RingOutcome> = {
 }
 
 app.post('/api/incoming/:id/:action', requireSecret, (req, res) => {
-  const outcome = ACTIONS[String(req.params.action)]
+  const action = String(req.params.action)
+  const outcome = ACTIONS[action]
   if (!outcome) {
     res.status(400).json({ error: 'Acao desconhecida.' })
     return
   }
 
-  const resolution = finish(String(req.params.id), outcome)
+  /*
+   * Recado de volta, so no caminho SEM voz: aprovar/recusar no dedo nao tem
+   * como o dono responder em palavras, entao o texto vem por aqui e sai no
+   * JSON do `/api/ring` do agente que ligou.
+   *
+   * Em `answer` o dono responde falando (a ligacao de voz que comeca depois ja
+   * leva a conversa inteira de volta pra sessao dele), e `timeout` e o relogio,
+   * nao o dono — nos dois casos um `reply` que venha e ignorado em silencio.
+   */
+  const wantsReply = action === 'approve' || action === 'decline'
+  const reply = typeof req.body?.reply === 'string' ? req.body.reply.trim() : ''
+  if (wantsReply && reply.length > 500) {
+    res.status(400).json({ error: 'O motivo precisa caber num cartao: no maximo 500 caracteres.' })
+    return
+  }
+
+  const resolution = finish(String(req.params.id), outcome, wantsReply ? reply : undefined)
   if (!resolution) {
     logEvent('warn', 'incoming_action_stale', {
       callId: String(req.params.id),
@@ -671,10 +706,12 @@ app.post('/api/incoming/:id/:action', requireSecret, (req, res) => {
 
   logEvent('info', 'incoming_action', {
     callId: String(req.params.id),
-    action: String(req.params.action),
+    action,
     outcome: resolution.outcome,
     // `applied: false` = o desfecho ja estava decidido e este clique so ecoou.
     applied: resolution.applied,
+    // So o fato de ter recado: o texto e do dono para o agente, nao para o log.
+    hasReply: Boolean(resolution.reply),
   })
 
   res.json({ ok: true, outcome: resolution.outcome, applied: resolution.applied })

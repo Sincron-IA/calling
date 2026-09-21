@@ -4,10 +4,16 @@
   "private": true,
   "description": "Wrapper fino de desktop do Calling: so abre uma janela com o app web.",
   "main": "main.js",
+  "desktopName": "calling.desktop",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "build": "electron-builder --publish never",
+    "build:win": "electron-builder --win --publish never",
+    "build:mac": "electron-builder --mac --publish never",
+    "build:linux": "electron-builder --linux --publish never"
   },
   "devDependencies": {
-    "electron": "^44.4.3"
+    "electron": "44.4.3",
+    "electron-builder": "^26.0.12"
   }
 }

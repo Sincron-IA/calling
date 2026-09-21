@@ -217,10 +217,21 @@ export function subscribeIncomingCalls(listener: Listener): () => void {
  * pendurado. 404 aqui e normal: quer dizer que o toque ja tinha sido resolvido
  * (timeout do servidor, outra aba) — nao e erro para mostrar na tela.
  */
-function resolveOnBridge(call: IncomingCall, action: 'approve' | 'decline' | 'answer' | 'timeout') {
+function resolveOnBridge(
+  call: IncomingCall,
+  action: 'approve' | 'decline' | 'answer' | 'timeout',
+  reply?: string,
+) {
+  /* SEM RECADO, NADA MUDA.
+     Sem texto a requisicao sai exatamente como sempre saiu: sem corpo e sem
+     `content-type`. O campo novo so aparece quando o Luiz escreveu algo. */
+  const text = reply?.trim()
   void fetch(`${bridgeUrl()}/api/incoming/${encodeURIComponent(call.id)}/${action}`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${sharedSecret()}` },
+    headers: text
+      ? { authorization: `Bearer ${sharedSecret()}`, 'content-type': 'application/json' }
+      : { authorization: `Bearer ${sharedSecret()}` },
+    body: text ? JSON.stringify({ reply: text }) : undefined,
     keepalive: true,
     // Cookie do Cloudflare Access junto, como nas demais chamadas ao bridge.
     credentials: 'include',
@@ -229,9 +240,14 @@ function resolveOnBridge(call: IncomingCall, action: 'approve' | 'decline' | 'an
   })
 }
 
-/** O Luiz aprovou o item sem abrir voz nenhuma. */
-export function approveIncoming(call: IncomingCall): void {
-  resolveOnBridge(call, 'approve')
+/**
+ * O Luiz aprovou o item sem abrir voz nenhuma.
+ *
+ * `reply` e o recado escrito que ele mandou junto, quando mandou: o bridge
+ * devolve esse texto ao agente no JSON do `/api/ring` que ficou pendurado.
+ */
+export function approveIncoming(call: IncomingCall, reply?: string): void {
+  resolveOnBridge(call, 'approve', reply)
 }
 
 /** Ele vai atender por voz: o agente ja pode parar de esperar. */
@@ -243,9 +259,12 @@ export function answerIncoming(call: IncomingCall): void {
  * Recusa. No dedo vira `declined`; por tempo esgotado vira `no_answer` — o
  * agente que ligou e quem decide o que fazer com isso (inclusive avisar no
  * Telegram, que e trabalho dele, nao do Calling).
+ *
+ * `reply` so faz sentido na recusa no dedo: no tempo esgotado nao ha ninguem
+ * escrevendo, e o bridge ignora o campo nesse caminho de qualquer jeito.
  */
-export function declineIncoming(call: IncomingCall, cause: DeclineCause): void {
-  resolveOnBridge(call, cause === 'timeout' ? 'timeout' : 'decline')
+export function declineIncoming(call: IncomingCall, cause: DeclineCause, reply?: string): void {
+  resolveOnBridge(call, cause === 'timeout' ? 'timeout' : 'decline', reply)
 }
 
 /**

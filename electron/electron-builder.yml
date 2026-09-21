@@ -1,0 +1,96 @@
+# Empacotamento do Calling para desktop.
+#
+# A ideia e uma so: quem for usar o app NAO deve precisar de terminal, de npm
+# nem de clonar o repo. Por isso todos os alvos aqui sao "portateis" — abre
+# clicando, sem instalador e sem gravar nada na maquina alem do proprio app.
+#
+# Rode sempre pela raiz do monorepo:
+#
+#   npm run electron:build
+#
+# (que faz `npm run build` do `web` antes, porque o pacote leva o `web/dist`
+# pronto dentro dele). O artefato sai em `electron/dist/`.
+#
+# IMPORTANTE — cada SO empacota o SEU: o electron-builder nao gera `.exe` no
+# Linux sem wine, nem `.app`/`.zip` de macOS fora de um Mac. Rode o comando NA
+# maquina do sistema que voce quer (o alvo e escolhido sozinho pelo SO atual).
+
+appId: com.sincron.calling
+productName: Calling
+
+# `dist/` de saida ja esta no `.gitignore` (`electron/dist/`).
+directories:
+  output: dist
+
+# O que entra DENTRO do app: o wrapper inteiro (main.js, preload.js, tray.js,
+# app-server.js, config-*.js, login-window.js e `assets/tray-icon.png`), menos
+# a propria pasta de saida.
+files:
+  - '**/*'
+  - '!dist/**'
+
+# O app WEB nao entra no asar: ele fica ao lado, em `resources/web/dist`.
+#
+# Isso nao e capricho — e o que faz o `main.js` continuar funcionando sem
+# mudar uma linha. La ele resolve `path.join(__dirname, '..', 'web', 'dist')`,
+# e no app empacotado `__dirname` e `.../resources/app.asar`: o `..` cai
+# exatamente em `.../resources`. Ou seja, o mesmo caminho relativo que aponta
+# para o `web/dist` do repo em desenvolvimento aponta para este aqui depois de
+# empacotado. (Vale tambem com `asar: false`, quando `__dirname` vira
+# `.../resources/app`.)
+#
+# Ficar fora do asar tambem ajuda o `app-server.js`, que le os arquivos do
+# `web/dist` com `fs` comum para servi-los no loopback.
+extraResources:
+  - from: ../web/dist
+    to: web/dist
+
+# Sem `icon:` de proposito. O unico icone do repo e o `assets/tray-icon.png`,
+# de 32x32, que e da BANDEJA; o electron-builder exige 256x256 ou mais para o
+# icone do aplicativo e recusa o build com um menor. Enquanto nao houver um
+# icone grande, o pacote sai com o icone padrao do Electron — inventar um aqui
+# seria pior. Quando existir, basta apontar `icon: assets/icon.png` (>=512px).
+
+# ---------------------------------------------------------------- Windows ---
+# `portable`: UM `.exe` so, sem instalador e sem passar pelo Painel de
+# Controle. E o que o Luiz pediu — baixa, da dois cliques, abre.
+win:
+  target:
+    - portable
+  artifactName: ${productName}-${version}-portable.${ext}
+
+portable:
+  # Extrai sempre na mesma pasta temporaria: abrir duas vezes nao vira dois
+  # apps, e a segunda abertura e rapida.
+  unpackDirName: false
+
+# ------------------------------------------------------------------- macOS ---
+# O Mac nao tem "exe portatil". O equivalente pratico e o `.app` dentro de um
+# `.zip`: descompacta, arrasta para onde quiser, abre. (`dmg` seria o caminho
+# "de instalar", que nao e o que queremos aqui.)
+mac:
+  target:
+    - target: zip
+      arch:
+        - arm64
+        - x64
+  category: public.app-category.productivity
+  artifactName: ${productName}-${version}-${arch}-mac.${ext}
+  # Sem assinatura/notarizacao: nao ha certificado Apple no projeto. O macOS
+  # vai pedir "abrir mesmo assim" na primeira vez (botao direito > Abrir).
+  identity: null
+
+# ------------------------------------------------------------------- Linux ---
+# AppImage e o "portable" do Linux: um arquivo so, `chmod +x` e executa.
+linux:
+  target:
+    - AppImage
+  category: Utility
+  synopsis: Ligacao por voz e texto com os agentes DG Claw
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  # Sem isto o nome do binario sai do `name` do package.json
+  # (`@calling/electron`), e a `/` no meio quebra o empacotamento do AppImage.
+  executableName: calling
+  # Liga a janela ao atalho (`WM_CLASS`): sem isso o ambiente grafico nao sabe
+  # que aquela janela e deste app, e a barra de tarefas mostra icone generico.
+  syncDesktopName: true
