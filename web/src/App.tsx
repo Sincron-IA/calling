@@ -15,6 +15,7 @@ import {
   type AgentChange,
   type CallPhase,
   type ComposeState,
+  type QueuedMessage,
   type ReplyBubble,
 } from './CallingBar'
 import {
@@ -28,6 +29,9 @@ import {
   type DeclineCause,
   type IncomingCall,
 } from './incoming'
+
+/** Quantos recados empurrados a fila guarda. Passou disso, o mais velho sai. */
+const MESSAGE_QUEUE_MAX = 30
 
 /** Quanto tempo depois de salvar por aqui o SSE ainda e "eco nosso". */
 const OWN_SAVE_WINDOW_MS = 4000
@@ -87,6 +91,11 @@ export function App({ readyNotice = '' }: AppProps) {
   const [reply, setReply] = useState<ReplyBubble | null>(null)
   // Um agente mudou a si mesmo pela VPS: o antes -> depois acima da barra.
   const [change, setChange] = useState<AgentChange | null>(null)
+  /* Os recados que os agentes empurraram, do mais novo para o mais velho.
+     O balao mostra o novo e sai sozinho; esta fila e o que sobra para quem
+     estava ocupado. So memoria: fechou o app, acabou — a mesma regra do resto
+     da conversa. */
+  const [messages, setMessages] = useState<QueuedMessage[]>([])
   // A lista que a tela mostra agora, para comparar com a que o SSE anuncia.
   const agentsRef = useRef<AgentSummary[]>([])
   // Quando o painel daqui salvou pela ultima vez: o SSE dessa gravacao nao e
@@ -178,7 +187,24 @@ export function App({ readyNotice = '' }: AppProps) {
      (o agente dizendo algo), e um balao so evita duas coisas disputando o
      espaco acima da barra. Ele sai sozinho, como toda resposta. */
   useEffect(
-    () => subscribeAgentMessages((message) => setReply({ agentSlug: message.agent, text: message.text })),
+    () =>
+      subscribeAgentMessages((message) => {
+        setReply({ agentSlug: message.agent, text: message.text })
+        setMessages((queue) =>
+          [
+            {
+              // `randomUUID` nao existe em contexto inseguro; o relogio mais um
+              // acaso cobre o que a chave precisa ser: unica nesta lista.
+              id: `${message.at}-${Math.random().toString(36).slice(2, 8)}`,
+              agentSlug: message.agent,
+              text: message.text,
+              at: message.at,
+              read: false,
+            },
+            ...queue,
+          ].slice(0, MESSAGE_QUEUE_MAX),
+        )
+      }),
     [],
   )
 
@@ -420,6 +446,12 @@ export function App({ readyNotice = '' }: AppProps) {
         onAgentsSaving={onAgentsSaving}
         change={change}
         onChangeDone={() => setChange(null)}
+        messages={messages}
+        onMessagesRead={() =>
+          setMessages((queue) => queue.map((item) => (item.read ? item : { ...item, read: true })))
+        }
+        onDismissMessage={(id) => setMessages((queue) => queue.filter((item) => item.id !== id))}
+        onClearMessages={() => setMessages([])}
         compose={compose}
         onDraftChange={(draft) => setCompose((state) => ({ ...state, draft }))}
         onSendMessage={() => void sendCompose()}

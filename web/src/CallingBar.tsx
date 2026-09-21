@@ -21,6 +21,9 @@ export const NOTICE_TIMEOUT_MS = 5000
 /** Quanto tempo a resposta do agente fica no balao antes de sumir. */
 export const REPLY_TIMEOUT_MS = 15000
 
+/** Depois de fechar o menu no clique, o hover fica surdo por este tempo. */
+const REOPEN_GUARD_MS = 600
+
 /** O campo de escrever. `agentSlug` vazio = fechado. */
 export interface ComposeState {
   agentSlug: string
@@ -43,6 +46,23 @@ export interface ReplyBubble {
  * Um agente mudou a propria cara (pelo arquivo dele na VPS, nao por aqui).
  * Guardamos o ANTES para mostrar antes -> depois num olhar.
  */
+/**
+ * Um recado que o agente empurrou, guardado na fila.
+ *
+ * O balao mostra o mais novo e sai sozinho — mas quem estava ocupado nao pode
+ * perder o que foi dito. A fila fica de pe ate alguem ler, e vive so em
+ * memoria: fechou o app, acabou, como o resto da conversa. Quem quer registro
+ * tem a thread do agente.
+ */
+export interface QueuedMessage {
+  id: string
+  agentSlug: string
+  text: string
+  /** Quando chegou (ms). */
+  at: number
+  read: boolean
+}
+
 export interface AgentChange {
   slug: string
   /** "trocou de cor", "trocou de nome", "trocou a imagem"... */
@@ -95,6 +115,22 @@ export interface CallingBarProps {
   /** Aviso de que um agente mudou a si mesmo. */
   change?: AgentChange | null
   onChangeDone?: () => void
+  /** A fila de recados empurrados pelos agentes, do mais novo para o mais velho. */
+  messages?: QueuedMessage[]
+  /** A fila foi aberta: tudo o que estava nela conta como lido. */
+  onMessagesRead?: () => void
+  /** Tirar UM recado da fila. */
+  onDismissMessage?: (id: string) => void
+  /** Esvaziar a fila. */
+  onClearMessages?: () => void
+}
+
+/** Hora do recado na fila: so hora e minuto, que e o que ajuda a se localizar. */
+function formatClock(at: number): string {
+  const when = new Date(at)
+  const hours = String(when.getHours()).padStart(2, '0')
+  const minutes = String(when.getMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
 }
 
 function formatDuration(ms: number): string {
@@ -191,6 +227,27 @@ function PencilIcon() {
       strokeLinejoin="round"
     >
       <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  )
+}
+
+/** Sininho da fila de recados. */
+function BellIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+      <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
     </svg>
   )
 }
@@ -386,6 +443,10 @@ export function CallingBar({
   onAgentsSaving,
   change = null,
   onChangeDone,
+  messages = [],
+  onMessagesRead,
+  onDismissMessage,
+  onClearMessages,
 }: CallingBarProps) {
   const [hovered, setHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -395,11 +456,23 @@ export function CallingBar({
   const [hintOpen, setHintOpen] = useState(false)
   // Slug do agente cuja aparencia esta aberta para edicao. Vazio = nenhum.
   const [editFor, setEditFor] = useState('')
+  // A fila de recados esta aberta.
+  const [queueOpen, setQueueOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<HTMLTextAreaElement>(null)
   // O menu abre no hover; o clique que vem logo depois nao pode fechar o que o
   // proprio mouse acabou de abrir.
   const openedByHoverRef = useRef(false)
+  /*
+   * Quando o menu foi fechado NO CLIQUE.
+   *
+   * Fechar encolhe a janela do app (ela tem o tamanho do conteudo), e a
+   * geometria nova debaixo do cursor faz o Chromium disparar um
+   * `pointerenter` NOVO no chevron — que reabria o menu na hora. O resultado
+   * era um chevron que so sabia abrir. Ignoramos o hover logo depois de um
+   * fechamento deliberado.
+   */
+  const closedAtRef = useRef(0)
 
   const nameOf = useCallback(
     (slug: string) => agents.find((a) => a.slug === slug)?.name ?? slug,
@@ -536,6 +609,21 @@ export function CallingBar({
     el.style.height = `${Math.min(el.scrollHeight, 96)}px`
   }, [compose?.draft, composeFor])
 
+  /** Fechar de verdade: o hover fica surdo pelo tempo do `REOPEN_GUARD_MS`. */
+  const closeMenu = useCallback(() => {
+    closedAtRef.current = Date.now()
+    openedByHoverRef.current = false
+    setMenuOpen(false)
+  }, [])
+
+  const unread = useMemo(() => messages.filter((m) => !m.read).length, [messages])
+
+  const openQueue = useCallback(() => {
+    setMenuOpen(false)
+    setQueueOpen(true)
+    onMessagesRead?.()
+  }, [onMessagesRead])
+
   const callAgent = useCallback(
     (slug: string) => {
       setMenuOpen(false)
@@ -646,7 +734,7 @@ export function CallingBar({
       ? `${current.name} · ${formatDuration(now - callStartedAt)}`
       : phase === 'calling'
         ? `${current.name} · chamando…`
-        : `${current.name} · clica pra ligar de novo`
+        : current.name
 
   return (
     <div className="bar" ref={rootRef}>
@@ -790,8 +878,35 @@ export function CallingBar({
         <div className="menu" role="menu" aria-label="Agentes">
           <div className="menu__head" role="presentation">
             <span className="eyebrow">Agentes</span>
-            <span className="eyebrow menu__online">
-              {agents.length === 1 ? '1 na linha' : `${agents.length} na linha`}
+            <span className="menu__tools">
+              <span className="eyebrow menu__online">
+                {agents.length === 1 ? '1 na linha' : `${agents.length} na linha`}
+              </span>
+              {/* A fila de recados. Discreta: so o sininho, com um ponto
+                  quando ha coisa nova. Some quando nunca houve recado. */}
+              {messages.length > 0 && (
+                <button
+                  type="button"
+                  className={`menu__tool${unread > 0 ? ' has-new' : ''}`}
+                  onClick={openQueue}
+                  title="Recados dos agentes"
+                  aria-label={
+                    unread > 0 ? `Recados dos agentes (${unread} novos)` : 'Recados dos agentes'
+                  }
+                >
+                  <BellIcon />
+                  {unread > 0 && <span className="menu__badge">{unread > 9 ? '9+' : unread}</span>}
+                </button>
+              )}
+              <button
+                type="button"
+                className="menu__tool"
+                onClick={closeMenu}
+                title="Fechar"
+                aria-label="Fechar a lista"
+              >
+                <CloseIcon />
+              </button>
             </span>
           </div>
           {agents.map((agent) => {
@@ -853,6 +968,72 @@ export function CallingBar({
         </div>
       )}
 
+      {/* A FILA DE RECADOS.
+          O balao mostra o mais novo e sai sozinho; aqui fica tudo o que
+          chegou enquanto ninguem estava olhando. Em fluxo, como todo o resto
+          desta coluna — ver o comentario do menu. */}
+      {queueOpen && (
+        <div className="queue" role="dialog" aria-label="Recados dos agentes">
+          <div className="queue__head">
+            <span className="eyebrow">Recados</span>
+            <span className="queue__tools">
+              {messages.length > 0 && (
+                <button
+                  type="button"
+                  className="queue__clear"
+                  onClick={() => {
+                    onClearMessages?.()
+                    setQueueOpen(false)
+                  }}
+                >
+                  Limpar
+                </button>
+              )}
+              <button
+                type="button"
+                className="menu__tool"
+                onClick={() => setQueueOpen(false)}
+                title="Fechar"
+                aria-label="Fechar os recados"
+              >
+                <CloseIcon />
+              </button>
+            </span>
+          </div>
+
+          {messages.length === 0 ? (
+            <p className="queue__empty">Nenhum recado por enquanto.</p>
+          ) : (
+            <ul className="queue__list">
+              {messages.map((message) => (
+                <li key={message.id} className="queue__item">
+                  <span className="queue__line">
+                    <AgentDisc
+                      name={nameOf(message.agentSlug)}
+                      color={colorOf(message.agentSlug)}
+                      src={avatarOf?.(message.agentSlug)}
+                      size={20}
+                    />
+                    <span className="queue__who">{nameOf(message.agentSlug)}</span>
+                    <span className="queue__at">{formatClock(message.at)}</span>
+                    <button
+                      type="button"
+                      className="menu__tool"
+                      onClick={() => onDismissMessage?.(message.id)}
+                      title="Tirar da fila"
+                      aria-label={`Tirar o recado de ${nameOf(message.agentSlug)} da fila`}
+                    >
+                      <CloseIcon />
+                    </button>
+                  </span>
+                  <span className="queue__text">{message.text}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {agentBeingEdited && (
         <AgentPanel
           agent={agentBeingEdited}
@@ -880,6 +1061,7 @@ export function CallingBar({
               />
               <b>{nameOf(composeFor)}</b>
             </span>
+            <span className="compose__tools">
             {/* O tutorial mora AQUI DENTRO, escondido: as teclas so aparecem
                 para quem for procurar por elas. */}
             <button
@@ -894,6 +1076,17 @@ export function CallingBar({
             >
               i
             </button>
+            {/* Fechar sem precisar saber do Esc. */}
+            <button
+              type="button"
+              className="menu__tool"
+              onClick={() => onCloseCompose?.()}
+              title="Fechar"
+              aria-label="Fechar o campo"
+            >
+              <CloseIcon />
+            </button>
+            </span>
           </div>
 
           {/* Uma linha so, e ela esta SEMPRE no layout — ora com o lembrete,
@@ -980,6 +1173,25 @@ export function CallingBar({
           <i />
         </span>
 
+        {/* O NOME (e o cronometro) ficam EM FLUXO, dentro do chip.
+            Antes isto era um rotulo absoluto colado embaixo: como a janela do
+            app tem o tamanho do conteudo e ignora filho posicionado fora da
+            caixa, ele nascia fora da janela e aparecia cortado pela metade —
+            a mesma armadilha do menu, em outro canto. */}
+        <span className={`chip__label${open || active ? ' is-open' : ''}`} aria-live="off">
+          {label}
+        </span>
+
+        {/* Tem recado esperando: um ponto, e so. Quem abre a lista ve o
+            sininho com a conta. */}
+        {unread > 0 && !queueOpen && (
+          <span
+            className="chip__new"
+            style={{ background: colorOf(messages[0].agentSlug) } as CSSProperties}
+            aria-hidden="true"
+          />
+        )}
+
         <span className="chip__reveal">
           <button
             type="button"
@@ -1007,9 +1219,12 @@ export function CallingBar({
                 setMenuOpen(true)
                 return
               }
-              setMenuOpen((value) => !value)
+              if (menuOpen) closeMenu()
+              else setMenuOpen(true)
             }}
             onPointerEnter={() => {
+              // Acabou de fechar no clique: o hover nao reabre (ver closedAtRef).
+              if (Date.now() - closedAtRef.current < REOPEN_GUARD_MS) return
               openedByHoverRef.current = !menuOpen
               setMenuOpen(true)
             }}
@@ -1026,9 +1241,6 @@ export function CallingBar({
           </button>
         </span>
 
-        <span className="chip__label" aria-live="off">
-          {label}
-        </span>
       </div>
     </div>
   )

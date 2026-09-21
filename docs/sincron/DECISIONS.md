@@ -550,3 +550,32 @@ Registre decisões técnicas, exceções e motivos.
   pelo espaço acima da barra. Sai sozinho, como toda resposta.
 - Revisar em: quando o dono quiser ligar o segundo agente (aí é só a linha do
   `.env`) — e se 3×30 s se mostrar pouco para uma sessão viva muito ocupada.
+
+## 2026-09-20 - A fila de recados, e o fechar que faltava em tudo
+
+- Contexto: o agente passou a empurrar recado pelo `POST /api/agents/:slug/notify`
+  (e7ca98e), e ele caia no balao da resposta, que some em 15s. Quem estivesse
+  ocupado perdia o recado sem deixar rastro no app.
+- Decisao: o balao continua igual (some sozinho), mas o recado tambem entra numa
+  FILA. O cabecalho da lista de agentes ganha um sininho com a conta do que nao
+  foi lido, e o chip ganha um ponto na cor do agente quando ha recado novo. Abrir
+  a fila marca tudo como lido. A fila vive so em memoria, como o resto da
+  conversa: registro de verdade e a thread do agente.
+- Alternativas: painel de historico com tudo o que foi dito — rejeitada, e o
+  oposto da decisao de plan-001 ("um balao so, sem historico"); notificacao do
+  sistema operacional — rejeitada por enquanto, o app e uma barra quieta e isso
+  seria barulho fora dele.
+- Junto disso, quatro coisas que o uso mostrou:
+  - o chevron so sabia ABRIR. Fechar encolhe a janela (que tem o tamanho do
+    conteudo), e a geometria nova debaixo do cursor faz o Chromium disparar um
+    `pointerenter` novo no proprio chevron, que reabria na hora. Agora um
+    fechamento deliberado deixa o hover surdo por 600ms;
+  - menu, campo de escrever e fila ganharam um `x` discreto. O Esc continua
+    valendo, mas ninguem e obrigado a saber disso;
+  - a engrenagem voltou a aparecer so no hover: o `:focus-within` do bloco a
+    mantinha acesa enquanto o campo de escrever tinha foco;
+  - o nome do agente saiu de um rotulo ABSOLUTO colado embaixo do chip e entrou
+    EM FLUXO dentro dele. Fora da caixa, ele nascia fora da janela e aparecia
+    cortado pela metade — a mesma armadilha que plan-001 ja tinha resolvido para
+    o menu.
+- Revisar em: se a fila passar a precisar sobreviver ao fechar do app.
