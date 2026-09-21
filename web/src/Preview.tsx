@@ -30,7 +30,7 @@ import type { AgentSummary } from './bridge'
 import type { IncomingCall } from './incoming'
 
 const URL_FAKE = 'https://calling-bridge.sincronia.digital'
-const SECRET_FAKE = 'sk_live_9f3a2b71c4e8d05a'
+const SECRET_FAKE = 'chave-de-mentira-so-para-a-bancada'
 
 const AGENTS = [
   { slug: 'automa', name: 'Automa', color: '#4ade80' },
