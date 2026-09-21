@@ -23,6 +23,7 @@ const {
   resizeConfigPanel,
   closeConfigPanel,
   closeConfigPanelIfIdle,
+  configPanelWindow,
 } = require('./config-panel')
 const { createTray, refreshTrayMenu, destroyTray } = require('./tray')
 const store = require('./config-store')
@@ -502,8 +503,10 @@ app.whenReady().then(() => {
       onAlwaysOnTop: (value) => {
         const prefs = store.savePrefs({ alwaysOnTop: value })
         applyAlwaysOnTop(prefs.alwaysOnTop)
-        // O painel pode estar aberto mostrando o contrario.
-        configWindow?.webContents?.send('calling:prefs', prefs)
+        // O painel pode estar aberto mostrando o contrario. Quem sabe se ele
+        // existe e o `config-panel.js`, dono da janela — aqui nao ha variavel
+        // nenhuma com ela, e era essa a `configWindow` que nao existia.
+        configPanelWindow()?.webContents.send('calling:prefs', prefs)
       },
       onQuit: () => {
         quitting = true

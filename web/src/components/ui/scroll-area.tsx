@@ -7,11 +7,18 @@ import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
 function ScrollArea({
   className,
   children,
+  type = "auto",
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
   return (
+    // `type="auto"` no lugar do `hover` que o Radix usa por padrao: com o
+    // "hover" a barra so existia enquanto o mouse estava em cima, e uma lista
+    // cortada sem nada a indicando parece uma lista que acabou. Com "auto" ela
+    // se comporta como a do sistema: aparece quando ha o que rolar, some quando
+    // nao ha.
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
+      type={type}
       className={cn("relative", className)}
       {...props}
     >
@@ -45,7 +52,10 @@ function ScrollBar({
     >
       <ScrollAreaPrimitive.ScrollAreaThumb
         data-slot="scroll-area-thumb"
-        className="relative flex-1 rounded-full bg-border"
+        // `bg-border` e quase o proprio fundo do painel no tema escuro: a
+        // barra existia e nao se via. Este cinza e o mesmo do texto secundario,
+        // rebaixado — visivel sem competir com o conteudo.
+        className="relative flex-1 rounded-full bg-muted-foreground/30 transition-colors hover:bg-muted-foreground/50"
       />
     </ScrollAreaPrimitive.ScrollAreaScrollbar>
   )

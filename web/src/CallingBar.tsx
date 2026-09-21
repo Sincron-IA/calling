@@ -934,7 +934,12 @@ export function CallingBar({
 
             <Separator />
 
-            <ScrollArea className="max-h-80">
+            {/* O TETO CABE A LISTA DE HOJE.
+                Sao 55px por agente: com os seis atuais, 390px. O teto de 320px
+                cortava o ultimo pela metade — e como a barra de rolagem so
+                aparecia no hover, a lista parecia ter cinco agentes, nao seis.
+                400px mostra os seis inteiros; do setimo em diante, rola. */}
+            <ScrollArea className="max-h-100">
               <ItemGroup className="p-1">
                 {agents.map((agent) => {
                   const isCurrent = agent.slug === current.slug
