@@ -2,9 +2,12 @@
 
 Ligacao por voz com os agentes DG Claw da Sincron (Automa, Ivo, Theo, Bravo,
 Flow, Vetor). O app fica quieto: so tres barrinhas num canto da tela.
-**Clicando nelas** aparece o avatar do ultimo agente chamado — um toque liga de
-novo, e o chevron abre a lista dos outros cinco, com a engrenagem da conexao no
-cabecalho dela. E uma ligacao por vez.
+**Clicando nelas** aparece o avatar do ultimo agente chamado — um toque abre o
+campo para escrever para ele, e o chevron abre a lista dos outros cinco, com a
+engrenagem da conexao no cabecalho dela. Ligar e um clique no telefone da linha
+do agente, ali na lista: e a acao mais cara que existe aqui (abre microfone,
+gasta token, interrompe quem esta do outro lado), entao ela nao e a que se
+acerta sem querer. E uma ligacao por vez.
 
 Nada abre no hover, de proposito: a janela nao tem moldura e veste o tamanho do
 conteudo, entao tudo o que abria so de passar o mouse fazia a janela mudar de

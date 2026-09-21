@@ -42,6 +42,7 @@ import {
   BellIcon,
   CheckIcon,
   ChevronDownIcon,
+  KeyboardIcon,
   PencilIcon,
   PhoneIcon,
   SendIcon,
@@ -70,7 +71,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item'
-import { Kbd } from '@/components/ui/kbd'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
@@ -1126,20 +1127,29 @@ export function CallingBar({
 
               <span className="flex items-center gap-0.5">
                 {/* O tutorial mora AQUI DENTRO, escondido: as teclas so
-                    aparecem para quem for procurar por elas. */}
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className="rounded-full font-mono"
-                  aria-label="Como mandar"
-                  aria-expanded={hintOpen}
-                  onPointerEnter={() => setHintOpen(true)}
-                  onPointerLeave={() => setHintOpen(false)}
-                  onFocus={() => setHintOpen(true)}
-                  onBlur={() => setHintOpen(false)}
-                >
-                  i
-                </Button>
+                    aparecem para quem for procurar por elas.
+
+                    Era um "i" escrito a mao, em fonte mono e num botao
+                    redondo — a unica coisa da interface inteira desenhada
+                    assim, bem ao lado de um X que e icone. Agora e um icone
+                    como todos os outros, e ele diz do que se trata. */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Teclas"
+                      aria-expanded={hintOpen}
+                      onPointerEnter={() => setHintOpen(true)}
+                      onPointerLeave={() => setHintOpen(false)}
+                      onFocus={() => setHintOpen(true)}
+                      onBlur={() => setHintOpen(false)}
+                    >
+                      <KeyboardIcon />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Teclas</TooltipContent>
+                </Tooltip>
                 <Button
                   variant="ghost"
                   size="icon-xs"
@@ -1157,33 +1167,38 @@ export function CallingBar({
                 do mouse pelo `i`. */}
             <div
               className={cn(
-                'flex h-5 items-center gap-2 px-3 transition-opacity',
+                'text-muted-foreground flex h-6 items-center gap-2 px-2.5 text-[0.625rem] transition-opacity',
                 compose.busy || hintOpen ? 'opacity-100' : 'opacity-0',
               )}
             >
               {compose.busy ? (
                 <>
-                  <Spinner className="text-muted-foreground size-3" />
-                  <span className="text-muted-foreground text-xs">
-                    {nameOf(composeFor)} está pensando
-                  </span>
+                  <Spinner className="size-3" />
+                  <span>{nameOf(composeFor)} está pensando</span>
                 </>
               ) : (
+                /* O `Kbd` nasce `h-5 text-xs`: do tamanho exato da linha, e
+                   maior que o texto ao lado dele. Aqui ele encolhe, para caber
+                   na coluna de 272px sem empurrar nada para fora. */
                 <>
-                  <span className="text-muted-foreground flex items-center gap-1 text-[0.625rem]">
-                    <Kbd>Enter</Kbd> manda
-                  </span>
-                  <span className="text-muted-foreground flex items-center gap-1 text-[0.625rem]">
-                    <Kbd>Shift+Enter</Kbd> linha
-                  </span>
-                  <span className="text-muted-foreground flex items-center gap-1 text-[0.625rem]">
-                    <Kbd>Esc</Kbd> fecha
-                  </span>
+                  <KbdGroup>
+                    <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Enter</Kbd>
+                    <span>manda</span>
+                  </KbdGroup>
+                  <KbdGroup>
+                    <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Shift+Enter</Kbd>
+                    <span>linha</span>
+                  </KbdGroup>
+                  <KbdGroup>
+                    <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Esc</Kbd>
+                    <span>fecha</span>
+                  </KbdGroup>
                 </>
               )}
             </div>
 
-            <div className="p-2 pt-1">
+            {/* O campo alinha a borda dele com o texto do cabecalho. */}
+            <div className="px-2.5 pb-2.5">
               <InputGroup>
                 <InputGroupTextarea
                   ref={draftRef}
@@ -1301,14 +1316,23 @@ export function CallingBar({
 
           {open && (
             <span className="app-no-drag relative ml-2 flex items-center">
+              {/* O AVATAR ESCREVE, NAO LIGA.
+                  Ele era o "liga de novo num toque", e ligar e a acao mais cara
+                  que existe aqui: abre microfone, gasta token e interrompe quem
+                  esta do outro lado. Escrever e o gesto do dia a dia, e era o
+                  que dava mais trabalho alcancar — a lista, a linha do agente,
+                  o aviaozinho. Trocamos: o avatar abre o campo, e ligar
+                  continua a um clique, no telefone da linha dele na lista.
+
+                  Na ligacao viva ele nao muda de ideia: ali ele desliga. */}
               <button
                 type="button"
                 className="focus-visible:ring-ring rounded-full transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:outline-none"
-                onClick={() => (active ? onHangUp() : callAgent(current.slug))}
+                onClick={() => (active ? onHangUp() : writeTo(current.slug))}
                 aria-label={
                   active
                     ? `Desligar a ligacao com ${current.name}`
-                    : `Ligar de novo para ${current.name}`
+                    : `Escrever para ${current.name}`
                 }
               >
                 <AgentAvatar
