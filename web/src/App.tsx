@@ -1,6 +1,9 @@
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
+import { XIcon } from 'lucide-react'
+import { AgentAvatar } from './AgentAvatar'
 import { isDesktopMainWindow } from './desktop'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GeminiLiveOrbAdapter } from 'orb-ui/adapters'
@@ -258,6 +261,7 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
     setPhase('idle')
     setCallStartedAt(null)
     setWaiting(false)
+    setLastReply('')
   }, [])
 
   const startCall = useCallback(async (slug: string) => {
@@ -482,9 +486,25 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
           </p>
         )}
         {lastReply && (
-          <blockquote className="bg-card text-card-foreground rounded-xl border p-3 text-sm leading-snug">
-            {lastReply}
-          </blockquote>
+          <div className="bg-card text-card-foreground rounded-xl border p-3">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <AgentAvatar name={currentName} color={colorOf(current)} src={avatarOf(current)} size={18} />
+                <span className="truncate text-xs font-semibold" style={{ color: colorOf(current) }}>
+                  {currentName}
+                </span>
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setLastReply('')}
+                aria-label="Fechar"
+              >
+                <XIcon />
+              </Button>
+            </div>
+            <p className="text-sm leading-snug">{lastReply}</p>
+          </div>
         )}
         {error && (
           <Alert variant="destructive" role="alert">

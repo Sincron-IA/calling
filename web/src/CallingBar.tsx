@@ -46,6 +46,7 @@ import {
   KeyboardIcon,
   PencilIcon,
   PhoneIcon,
+  PhoneOffIcon,
   SendIcon,
   SettingsIcon,
   XIcon,
@@ -908,49 +909,60 @@ export function CallingBar({
             mensagem troca o que esta aqui. */}
         {reply && (
           <Panel
-            asChild
             className={cn(reply.isError && 'border-destructive/40')}
             style={{ '--agent': colorOf(reply.agentSlug) } as CSSProperties}
+            onPointerEnter={() => setReplyHeld(true)}
+            onPointerLeave={() => setReplyHeld(false)}
+            aria-live="polite"
           >
-            <button
-              type="button"
-              onClick={() => onReplyDone?.()}
-              onPointerEnter={() => setReplyHeld(true)}
-              onPointerLeave={() => setReplyHeld(false)}
-              aria-live="polite"
-              title="Fechar"
-            >
-              <div className="flex items-center justify-between gap-2 px-3 pt-2.5">
+            <div className="flex items-center justify-between gap-2 px-3 pt-2.5">
+              <span className="flex min-w-0 items-center gap-1.5">
+                {!reply.isError && (
+                  <AgentAvatar
+                    name={nameOf(reply.agentSlug)}
+                    color={colorOf(reply.agentSlug)}
+                    src={avatarOf?.(reply.agentSlug)}
+                    size={16}
+                  />
+                )}
                 <Eyebrow
                   className={cn('truncate', reply.isError && 'text-destructive')}
                   style={reply.isError ? undefined : { color: colorOf(reply.agentSlug) }}
                 >
                   {reply.isError ? 'não consegui mandar' : nameOf(reply.agentSlug)}
                 </Eyebrow>
-                {reply.echoed ? (
+              </span>
+              <span className="flex shrink-0 items-center gap-1">
+                {reply.echoed && (
                   <Badge variant="outline" className="gap-1 text-[0.625rem]">
                     <CheckIcon className="size-2.5" />
                     na thread
                   </Badge>
-                ) : (
-                  <Eyebrow className="shrink-0 whitespace-nowrap">clique para fechar</Eyebrow>
                 )}
-              </div>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => onReplyDone?.()}
+                  aria-label="Fechar"
+                >
+                  <XIcon />
+                </Button>
+              </span>
+            </div>
 
-              <p className="text-foreground px-3 py-2 text-left text-sm leading-snug whitespace-pre-wrap">
-                {reply.text}
-              </p>
+            <p className="text-foreground px-3 py-2 text-left text-sm leading-snug whitespace-pre-wrap">
+              {reply.text}
+            </p>
 
-              {/* Erro nao tem relogio: fica ate alguem decidir. */}
-              {!reply.isError && (
-                <Timer
-                  key={`${reply.agentSlug}:${reply.text}`}
-                  ms={REPLY_TIMEOUT_MS}
-                  color={colorOf(reply.agentSlug)}
-                  held={replyHeld}
-                />
-              )}
-            </button>
+            {/* Erro nao tem relogio: fica ate alguem decidir. */}
+            {!reply.isError && (
+              <Timer
+                key={`${reply.agentSlug}:${reply.text}`}
+                ms={REPLY_TIMEOUT_MS}
+                color={colorOf(reply.agentSlug)}
+                held={replyHeld}
+              />
+            )}
           </Panel>
         )}
 
@@ -1264,45 +1276,46 @@ export function CallingBar({
               </span>
             </div>
 
-            {/* Uma linha so, e ela esta SEMPRE no layout — ora com o lembrete,
-                ora com o "esta pensando", ora vazia. Se ela entrasse e saisse,
-                a janela (que tem o tamanho do conteudo) pularia a cada passada
-                do mouse pelo `i`. */}
-            <div
-              className={cn(
-                'text-muted-foreground flex h-6 items-center gap-2 px-2.5 text-[0.625rem] transition-opacity',
-                compose.busy || hintOpen ? 'opacity-100' : 'opacity-0',
-              )}
-            >
-              {compose.busy ? (
-                <>
-                  <Spinner className="size-3" />
-                  <span>{nameOf(composeFor)} está pensando</span>
-                </>
-              ) : (
-                /* O `Kbd` nasce `h-5 text-xs`: do tamanho exato da linha, e
-                   maior que o texto ao lado dele. Aqui ele encolhe, para caber
-                   na coluna de 272px sem empurrar nada para fora. */
-                <>
-                  <KbdGroup>
-                    <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Enter</Kbd>
-                    <span>manda</span>
-                  </KbdGroup>
-                  <KbdGroup>
-                    <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Shift+Enter</Kbd>
-                    <span>linha</span>
-                  </KbdGroup>
-                  <KbdGroup>
-                    <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Esc</Kbd>
-                    <span>fecha</span>
-                  </KbdGroup>
-                </>
-              )}
-            </div>
-
             {/* O campo alinha a borda dele com o texto do cabecalho. */}
             <div className="px-2.5 pb-2.5">
               <InputGroup>
+                {/* A LINHA DO TOPO MORA DENTRO DA CAIXA — e do shadcn pronto
+                    (`align="block-start"`), nao um bloco solto por cima.
+                    SEMPRE no layout — ora com o lembrete, ora com o "esta
+                    pensando", ora vazia — senao a janela (que tem o tamanho do
+                    conteudo) pularia a cada passada do mouse pelo `i`. */}
+                <InputGroupAddon
+                  align="block-start"
+                  className={cn(
+                    'text-muted-foreground h-6 gap-2 text-[0.625rem] transition-opacity',
+                    compose.busy || hintOpen ? 'opacity-100' : 'opacity-0',
+                  )}
+                >
+                  {compose.busy ? (
+                    <>
+                      <Spinner className="size-3" />
+                      <span>{nameOf(composeFor)} está pensando</span>
+                    </>
+                  ) : (
+                    /* O `Kbd` nasce `h-5 text-xs`: do tamanho exato da linha, e
+                       maior que o texto ao lado dele. Aqui ele encolhe, para caber
+                       na coluna de 272px sem empurrar nada para fora. */
+                    <>
+                      <KbdGroup>
+                        <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Enter</Kbd>
+                        <span>manda</span>
+                      </KbdGroup>
+                      <KbdGroup>
+                        <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Shift+Enter</Kbd>
+                        <span>linha</span>
+                      </KbdGroup>
+                      <KbdGroup>
+                        <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Esc</Kbd>
+                        <span>fecha</span>
+                      </KbdGroup>
+                    </>
+                  )}
+                </InputGroupAddon>
                 <InputGroupTextarea
                   ref={draftRef}
                   rows={1}
@@ -1427,10 +1440,14 @@ export function CallingBar({
                   o aviaozinho. Trocamos: o avatar abre o campo, e ligar
                   continua a um clique, no telefone da linha dele na lista.
 
-                  Na ligacao viva ele nao muda de ideia: ali ele desliga. */}
+                  Na ligacao viva ele nao muda de ideia: ali ele desliga — e
+                  o disco continua ele mesmo, sempre. So o telefone cortado
+                  no canto (pequeno, sempre vermelho) diz o que o clique faz;
+                  o fundo vermelho, contido no circulo, e so do hover — nao
+                  fica tudo vermelho o tempo inteiro da ligacao. */}
               <button
                 type="button"
-                className="focus-visible:ring-ring rounded-full transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:outline-none"
+                className="group focus-visible:ring-ring relative rounded-full transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:outline-none"
                 onClick={() => (active ? onHangUp() : writeTo(current.slug))}
                 aria-label={
                   active
@@ -1444,6 +1461,23 @@ export function CallingBar({
                   src={avatarOf?.(current.slug)}
                   size={32}
                 />
+                {active && (
+                  /* Por CIMA do disco, nao atras: o `AgentAvatar` e opaco de
+                     proposito (para nao vazar um disco por tras do outro nas
+                     pilhas), entao um veu atras dele nunca apareceria. */
+                  <span
+                    aria-hidden="true"
+                    className="bg-destructive/25 absolute inset-0 rounded-full opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                  />
+                )}
+                {active && (
+                  <span
+                    className="bg-background text-destructive absolute -right-0.5 -bottom-0.5 grid size-3.5 place-items-center rounded-full"
+                    aria-hidden="true"
+                  >
+                    <PhoneOffIcon className="size-2" />
+                  </span>
+                )}
               </button>
 
               {/* O CHEVRON ABRE NO CLIQUE, E SO NO CLIQUE.
