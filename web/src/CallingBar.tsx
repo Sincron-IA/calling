@@ -42,10 +42,10 @@ import {
   BellIcon,
   CheckIcon,
   ChevronDownIcon,
-  GripVerticalIcon,
   PencilIcon,
   PhoneIcon,
   SendIcon,
+  SettingsIcon,
   XIcon,
 } from 'lucide-react'
 
@@ -91,25 +91,18 @@ export const NOTICE_TIMEOUT_MS = 5000
 /** Quanto tempo a resposta do agente fica no balao antes de sumir. */
 export const REPLY_TIMEOUT_MS = 15000
 
-/** Depois de fechar o menu no clique, o hover fica surdo por este tempo. */
-const REOPEN_GUARD_MS = 600
-
 /*
- * Intencao de hover.
+ * NADA AQUI ABRE NO HOVER.
  *
- * Abrir e fechar na hora exata do `pointerenter`/`pointerleave` transformava
- * qualquer tremida de 1px — ou um reposicionamento da janela — em um ciclo
- * abre/fecha. Com uma pausa curta na entrada e uma mais longa na saida, o
- * gesto precisa ser deliberado, e o caminho de volta perdoa o desvio.
+ * A barra passar o mouse e abrir era a origem de quase tudo o que incomodava:
+ * ela acendia sozinha ao atravessar o canto da tela, a janela mudava de tamanho
+ * debaixo do cursor, e o chevron abria a lista no meio de um arrasto. Nenhuma
+ * pausa de intencao resolve isso — resolve so parcialmente, e ao custo de um
+ * monte de relogio e de guarda para segurar o que nao devia comecar.
+ *
+ * Agora e clique: as barrinhas abrem a barra, um segundo clique (ou o Esc, ou
+ * clicar fora) fecham. O hover nao muda nada — nem o tamanho da janela.
  */
-/** Quanto tempo o mouse fica sobre a barra antes de ela acender. */
-const HOVER_OPEN_MS = 90
-
-/** Quanto tempo a barra fica acesa depois que o mouse sai. */
-const HOVER_CLOSE_MS = 260
-
-/** O mesmo, para o chevron que abre a lista no hover. */
-const MENU_OPEN_MS = 160
 
 /** Largura da coluna: uma so, para a janela nao mudar de largura ao abrir. */
 const RAIL = 'w-68'
@@ -213,6 +206,18 @@ export interface CallingBarProps {
   onDismissMessage?: (id: string) => void
   /** Esvaziar a fila. */
   onClearMessages?: () => void
+  /**
+   * Abrir o painel de conexao.
+   *
+   * A engrenagem morava solta ao lado da barra, aparecendo no hover — mais uma
+   * coisa a acertar com o mouse num canto de tela ja apertado, e que se mexia
+   * quando a barra crescia. Agora ela mora no cabecalho da lista de agentes,
+   * que e onde se vai para mexer em qualquer coisa do app.
+   *
+   * O retangulo e o do proprio botao: o processo principal usa ele para decidir
+   * de onde o painel sai.
+   */
+  onOpenConfig?: (anchor: { x: number; y: number; width: number; height: number } | null) => void
 }
 
 /* ------------------------------------------------------------- utilidades -- */
@@ -446,8 +451,10 @@ export function CallingBar({
   onMessagesRead,
   onDismissMessage,
   onClearMessages,
+  onOpenConfig,
 }: CallingBarProps) {
-  const [hovered, setHovered] = useState(false)
+  // A barra esta aberta (mostrando nome, avatar e chevron). So o clique mexe.
+  const [open, setOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [stackOpen, setStackOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -459,57 +466,6 @@ export function CallingBar({
   const [queueOpen, setQueueOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<HTMLTextAreaElement>(null)
-  // O menu abre no hover; o clique que vem logo depois nao pode fechar o que o
-  // proprio mouse acabou de abrir.
-  const openedByHoverRef = useRef(false)
-  /*
-   * Quando o menu foi fechado NO CLIQUE.
-   *
-   * Fechar encolhe a janela do app (ela tem o tamanho do conteudo), e a
-   * geometria nova debaixo do cursor faz o Chromium disparar um
-   * `pointerenter` NOVO no chevron — que reabria o menu na hora. Ignoramos o
-   * hover logo depois de um fechamento deliberado.
-   */
-  const closedAtRef = useRef(0)
-
-  /*
-   * A ZONA DE HOVER E A BARRA INTEIRA, nao o chip.
-   *
-   * O chip era, ao mesmo tempo, o alvo do hover, a alca de arrastar a janela
-   * (`app-drag`) e o que muda de largura na animacao. Com isso cada quadro da
-   * transicao recalculava a regiao de arraste e o Windows refazia o hit-test —
-   * `pointerleave` e `pointerenter` sinteticos, a barra piscando. Alem disso, o
-   * menu, o balao e o campo de escrever sao IRMAOS do chip, separados por um
-   * `gap`: atravessar esse vao ja era sair do chip.
-   *
-   * A coluna engloba todos eles e o vao entre eles, e nao e regiao de arraste.
-   */
-  const hoverTimerRef = useRef(0)
-  const menuTimerRef = useRef(0)
-
-  const setHoverNow = useCallback((value: boolean) => {
-    window.clearTimeout(hoverTimerRef.current)
-    setHovered(value)
-  }, [])
-
-  const onBarEnter = useCallback(() => {
-    window.clearTimeout(hoverTimerRef.current)
-    hoverTimerRef.current = window.setTimeout(() => setHovered(true), HOVER_OPEN_MS)
-  }, [])
-
-  const onBarLeave = useCallback(() => {
-    window.clearTimeout(hoverTimerRef.current)
-    window.clearTimeout(menuTimerRef.current)
-    hoverTimerRef.current = window.setTimeout(() => setHovered(false), HOVER_CLOSE_MS)
-  }, [])
-
-  useEffect(
-    () => () => {
-      window.clearTimeout(hoverTimerRef.current)
-      window.clearTimeout(menuTimerRef.current)
-    },
-    [],
-  )
 
   const nameOf = useCallback(
     (slug: string) => agents.find((a) => a.slug === slug)?.name ?? slug,
@@ -547,20 +503,21 @@ export function CallingBar({
     return () => window.clearInterval(id)
   }, [phase, callStartedAt])
 
-  // Fecha o menu (e a lista de chamadas) ao clicar fora ou apertar Esc.
+  /* Clicar fora, ou o Esc, fecha tudo o que esta aberto — a lista, a pilha de
+     chamadas e a propria barra. Como agora e o clique que abre, tem que haver
+     um clique que feche sem exigir mira no mesmo alvo de novo. */
   useEffect(() => {
-    if (!menuOpen && !stackOpen) return
+    if (!menuOpen && !stackOpen && !open) return
+    const closeAll = () => {
+      setMenuOpen(false)
+      setStackOpen(false)
+      setOpen(false)
+    }
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setMenuOpen(false)
-        setStackOpen(false)
-      }
+      if (!rootRef.current?.contains(event.target as Node)) closeAll()
     }
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setMenuOpen(false)
-        setStackOpen(false)
-      }
+      if (event.key === 'Escape') closeAll()
     }
     window.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('keydown', onKeyDown)
@@ -568,7 +525,7 @@ export function CallingBar({
       window.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [menuOpen, stackOpen])
+  }, [menuOpen, stackOpen, open])
 
   // Uma chamada recebida some da fila: nao faz sentido segurar a lista aberta.
   useEffect(() => {
@@ -645,13 +602,6 @@ export function CallingBar({
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 96)}px`
   }, [compose?.draft, composeFor])
-
-  /** Fechar de verdade: o hover fica surdo pelo tempo do `REOPEN_GUARD_MS`. */
-  const closeMenu = useCallback(() => {
-    closedAtRef.current = Date.now()
-    openedByHoverRef.current = false
-    setMenuOpen(false)
-  }, [])
 
   const unread = useMemo(() => messages.filter((m) => !m.read).length, [messages])
 
@@ -777,7 +727,6 @@ export function CallingBar({
   }
 
   /* ---- Parado / na linha: um chip so, quieto ---- */
-  const open = hovered || menuOpen
   const label =
     phase === 'in-call' && callStartedAt !== null
       ? `${current.name} · ${formatDuration(now - callStartedAt)}`
@@ -787,7 +736,7 @@ export function CallingBar({
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className={column} ref={rootRef} onPointerEnter={onBarEnter} onPointerLeave={onBarLeave}>
+      <div className={column} ref={rootRef}>
         {/* Recado curto. Em fluxo como todo o resto — ver o cabecalho. */}
         {notice && (
           <Panel asChild>
@@ -914,6 +863,31 @@ export function CallingBar({
                 {agents.length === 1 ? '1 na linha' : `${agents.length} na linha`}
               </Eyebrow>
 
+              {onOpenConfig && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={(event) => {
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        setMenuOpen(false)
+                        onOpenConfig({
+                          x: rect.left,
+                          y: rect.top,
+                          width: rect.width,
+                          height: rect.height,
+                        })
+                      }}
+                      aria-label="Conexão"
+                    >
+                      <SettingsIcon />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Conexão</TooltipContent>
+                </Tooltip>
+              )}
+
               {/* A fila de recados. Discreta: so o sininho, com a conta quando
                   ha coisa nova. Some quando nunca houve recado. */}
               {messages.length > 0 && (
@@ -946,7 +920,7 @@ export function CallingBar({
               <Button
                 variant="ghost"
                 size="icon-xs"
-                onClick={closeMenu}
+                onClick={() => setMenuOpen(false)}
                 aria-label="Fechar a lista"
               >
                 <XIcon />
@@ -1255,10 +1229,23 @@ export function CallingBar({
           </Panel>
         )}
 
-        {/* O CHIP. */}
+        {/* ------------------------------------------------------- O CHIP --
+            DOIS ESTADOS, E ELE SALTA ENTRE OS DOIS.
+
+            Antes o avatar, a alca e o nome cresciam de zero ate a largura
+            deles em 240ms. Numa janela que veste o conteudo, animar o TAMANHO
+            e uma briga que a janela sempre perde: ela chega alguns quadros
+            depois e, nesse meio tempo, corta o que ha dentro — a barra piscava
+            aumentando e diminuindo o tempo todo.
+
+            Agora ou aparece, ou nao aparece. A janela muda de tamanho UMA vez
+            por gesto, e ja no tamanho final: nao ha o que perseguir.
+
+            A ALTURA nao muda nunca (`h-11`), mesmo com o chip vazio: assim o
+            unico eixo que se mexe no hover e a largura. */}
         <div
           className={cn(
-            'app-drag relative flex cursor-move items-center rounded-full border px-2.5 py-1.5 transition-colors',
+            'app-drag relative flex h-11 cursor-move items-center rounded-full border px-3 transition-colors',
             open || active ? 'border-border' : 'border-transparent',
             open
               ? 'bg-popover/90 shadow-2xl backdrop-blur-sm'
@@ -1268,107 +1255,89 @@ export function CallingBar({
           )}
           style={{ '--agent': currentColor } as CSSProperties}
         >
-          {/* Alca de arrastar: so aparece com o chip aceso. */}
-          <span
-            className="reveal text-muted-foreground"
-            data-open={open}
-            style={{ '--reveal-w': '0.75rem', '--reveal-gap': '0px' } as CSSProperties}
-            aria-hidden="true"
-          >
-            <GripVerticalIcon className="size-3" />
-          </span>
+          {/* AS BARRINHAS SAO O BOTAO.
+              Elas sao a unica coisa que existe com a barra fechada, entao sao
+              elas que abrem — e fecham. Precisam ser `no-drag`: no Windows uma
+              area de arrasto engole o clique inteiro.
 
-          {/* Parado: tres barrinhas mudas. Na linha: as mesmas tres, vivas. */}
-          <span className="wave ml-1.5" data-live={active} aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
+              O que sobra em volta delas (a folga do `px-3` dos lados e os 13px
+              de cada lado dentro da altura de 44px) continua sendo arrasto, e e
+              por ali que a janela se pega. */}
+          <button
+            type="button"
+            className="app-no-drag focus-visible:ring-ring cursor-pointer rounded focus-visible:ring-2 focus-visible:outline-none"
+            onClick={() => setOpen((isOpen) => !isOpen)}
+            aria-expanded={open}
+            aria-label={open ? 'Fechar a barra' : 'Abrir a barra'}
+          >
+            <span className="wave" data-live={active} aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+          </button>
 
           {/* O NOME (e o cronometro) ficam EM FLUXO, dentro do chip: fora dele,
               a janela — que tem o tamanho do conteudo — cortava o texto pela
               metade. */}
-          <span
-            className="reveal-text text-muted-foreground text-xs"
-            data-open={open || active}
-            aria-live="off"
-          >
-            {label}
-          </span>
+          {(open || active) && (
+            <span
+              className="text-muted-foreground ml-2 max-w-38 truncate text-xs"
+              aria-live="off"
+            >
+              {label}
+            </span>
+          )}
 
           {/* Tem recado esperando: um ponto, e so. Quem abre a lista ve o
               sininho com a conta. */}
           {unread > 0 && !queueOpen && !open && (
             <span
-              className="absolute top-0 right-0 size-2 rounded-full"
+              className="absolute top-1.5 right-1.5 size-2 rounded-full"
               style={{ background: colorOf(messages[0].agentSlug) }}
               aria-hidden="true"
             />
           )}
 
-          <span
-            className="reveal app-no-drag relative flex items-center"
-            data-open={open}
-            style={{ '--reveal-w': '2.375rem' } as CSSProperties}
-          >
-            <button
-              type="button"
-              className="focus-visible:ring-ring rounded-full transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:outline-none"
-              onClick={() => (active ? onHangUp() : callAgent(current.slug))}
-              onFocus={() => setHoverNow(true)}
-              onBlur={() => setHoverNow(false)}
-              aria-label={
-                active
-                  ? `Desligar a ligacao com ${current.name}`
-                  : `Ligar de novo para ${current.name}`
-              }
-            >
-              <AgentAvatar
-                name={current.name}
-                color={currentColor}
-                src={avatarOf?.(current.slug)}
-                size={32}
-              />
-            </button>
-
-            <Button
-              variant="secondary"
-              size="icon-xs"
-              className="absolute -top-1 right-0 size-4 rounded-full border"
-              onClick={() => {
-                window.clearTimeout(menuTimerRef.current)
-                if (openedByHoverRef.current) {
-                  openedByHoverRef.current = false
-                  setMenuOpen(true)
-                  return
+          {open && (
+            <span className="app-no-drag relative ml-2 flex items-center">
+              <button
+                type="button"
+                className="focus-visible:ring-ring rounded-full transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:outline-none"
+                onClick={() => (active ? onHangUp() : callAgent(current.slug))}
+                aria-label={
+                  active
+                    ? `Desligar a ligacao com ${current.name}`
+                    : `Ligar de novo para ${current.name}`
                 }
-                if (menuOpen) closeMenu()
-                else setMenuOpen(true)
-              }}
-              onPointerEnter={() => {
-                // Acabou de fechar no clique: o hover nao reabre.
-                if (Date.now() - closedAtRef.current < REOPEN_GUARD_MS) return
-                if (menuOpen) return
-                window.clearTimeout(menuTimerRef.current)
-                // A lista so abre se o mouse REALMENTE parar no chevron.
-                menuTimerRef.current = window.setTimeout(() => {
-                  openedByHoverRef.current = true
-                  setMenuOpen(true)
-                }, MENU_OPEN_MS)
-              }}
-              onPointerLeave={() => {
-                window.clearTimeout(menuTimerRef.current)
-                openedByHoverRef.current = false
-              }}
-              onFocus={() => setHoverNow(true)}
-              onBlur={() => setHoverNow(false)}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              aria-label="Escolher outro agente"
-            >
-              <ChevronDownIcon className="size-2.5" />
-            </Button>
-          </span>
+              >
+                <AgentAvatar
+                  name={current.name}
+                  color={currentColor}
+                  src={avatarOf?.(current.slug)}
+                  size={32}
+                />
+              </button>
+
+              {/* O CHEVRON ABRE NO CLIQUE, E SO NO CLIQUE.
+                  Abrir no hover transformava qualquer passagem do mouse — um
+                  arrasto da janela, o caminho ate a engrenagem — em uma lista
+                  aberta que ninguem pediu. E era ele que exigia os tres
+                  remendos que sairam daqui: a marca de "abri no hover", o
+                  guarda de 600ms contra reabrir e o relogio de intencao. */}
+              <Button
+                variant="secondary"
+                size="icon-xs"
+                className="absolute -top-1 right-0 size-4 rounded-full border"
+                onClick={() => setMenuOpen((isOpen) => !isOpen)}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                aria-label="Escolher outro agente"
+              >
+                <ChevronDownIcon className="size-2.5" />
+              </Button>
+            </span>
+          )}
         </div>
       </div>
     </TooltipProvider>

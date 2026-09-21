@@ -61,6 +61,8 @@ const BASE = {
   onApprove: NADA,
   onAnswer: NADA,
   onDecline: NADA,
+  // A engrenagem so aparece quando ha para onde ela levar.
+  onOpenConfig: NADA,
 }
 
 /** O rodape que o `ConfigPanel` monta de verdade. */

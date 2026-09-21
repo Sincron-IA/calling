@@ -1,9 +1,14 @@
 # Calling
 
 Ligacao por voz com os agentes DG Claw da Sincron (Automa, Ivo, Theo, Bravo,
-Flow, Vetor). O app fica quieto: so uma **barrinha no canto**. Passando o mouse
-nela aparece o avatar do ultimo agente chamado — um toque liga de novo, e o
-chevron abre a lista dos outros cinco. E uma ligacao por vez.
+Flow, Vetor). O app fica quieto: so tres barrinhas num canto da tela.
+**Clicando nelas** aparece o avatar do ultimo agente chamado — um toque liga de
+novo, e o chevron abre a lista dos outros cinco, com a engrenagem da conexao no
+cabecalho dela. E uma ligacao por vez.
+
+Nada abre no hover, de proposito: a janela nao tem moldura e veste o tamanho do
+conteudo, entao tudo o que abria so de passar o mouse fazia a janela mudar de
+tamanho debaixo do cursor. Clique abre, clique (ou Esc, ou clicar fora) fecha.
 
 Quando um agente e que precisa do Luiz, a barrinha vira um cartao de **chamada
 recebida**, com o motivo em uma linha e tres saidas: `Aprovar` (resolve na hora,
@@ -39,9 +44,9 @@ docs/       AGENT-BRIDGE.md, SHADCN.md + padrao Sincron em docs/sincron/
 
 Tudo o que se ve e componente pronto do shadcn/ui: `Item`, `Empty`,
 `InputGroup`, `ScrollArea`, `Field`, `Badge`, `Avatar`, `ToggleGroup`,
-`AlertDialog`. Sobraram oito utilidades de CSS, e cada uma tem um motivo que
+`AlertDialog`. Sobraram seis utilidades de CSS, e cada uma tem um motivo que
 nao e preguica — o filete de tempo que pausa no hover, as tres barrinhas do
-audio, o chip que se abre e o `-webkit-app-region` do Electron.
+audio e o `-webkit-app-region` do Electron.
 
 O porque de nada aqui usar `Popover`, `Sheet` ou `sonner` (a janela tem o
 tamanho do conteudo, e portal + `position: absolute` a quebram) esta em

@@ -20,17 +20,13 @@
  * `window.callingDesktop` esta presente.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { App } from './App'
 import { ConnectScreen, ConnectingCard, type ConnectPhase } from './ConnectScreen'
 import { fetchAgents } from './bridge'
 import { DEFAULT_BRIDGE_URL, setConfig } from './config'
 import { resetIncomingStream } from './incoming'
 import { desktop } from './desktop'
-import { SettingsIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
 
 type Phase = 'boot' | ConnectPhase
 
@@ -86,9 +82,6 @@ export function DesktopGate() {
   // silenciosa da abertura do app (cookie ainda valendo) nao avisa nada, senao
   // viraria ruido toda manha.
   const [readyNotice, setReadyNotice] = useState('')
-  // A barra encostou na borda direita da tela? Entao a engrenagem desce.
-  const [rightEdge, setRightEdge] = useState(false)
-  const gearRef = useRef<HTMLButtonElement>(null)
 
   /* --------------------------------------------------- abertura do app ---- */
 
@@ -225,32 +218,10 @@ export function DesktopGate() {
     }
   }, [api])
 
-  /* ------------------------------------ a engrenagem ao lado ou embaixo --- */
-
-  /**
-   * Quem sabe ONDE a janela esta e o processo principal (ele e quem a ancora no
-   * canto). Perguntamos uma vez ao nascer e depois ficamos ouvindo: arrastar a
-   * barra ate a borda direita, ou trocar a resolucao, muda a resposta.
-   */
-  useEffect(() => {
-    let alive = true
-
-    void api
-      .getMainEdge()
-      .then((state) => {
-        if (alive && state) setRightEdge(state.rightEdge)
-      })
-      .catch(() => undefined)
-
-    const stop = api.onMainEdge((state) => {
-      if (state) setRightEdge(state.rightEdge)
-    })
-
-    return () => {
-      alive = false
-      stop?.()
-    }
-  }, [api])
+  /* A ENGRENAGEM NAO MORA MAIS AQUI, entao a borda da tela nao muda mais o
+     desenho: ela e uma linha no cabecalho da lista de agentes, e a lista abre
+     sempre no mesmo lugar. O `getMainEdge`/`onMainEdge` da ponte continua de pe
+     para quem precisar saber onde a janela esta — hoje, ninguem. */
 
   /* ------------------------------------------------ conectar de verdade -- */
 
@@ -324,12 +295,19 @@ export function DesktopGate() {
    * decide se ele desce ou sobe e o processo principal, olhando o espaco que
    * sobra na tela (no Windows, com a barra de tarefas embaixo, ele sobe).
    */
-  const openConfigPanel = useCallback(() => {
-    const rect = gearRef.current?.getBoundingClientRect()
-    void api.openConfigPanel(
-      rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null,
-    )
-  }, [api])
+  /**
+   * Abrir o painel de conexao.
+   *
+   * A ancora vem de QUEM CLICOU — hoje a engrenagem no cabecalho da lista de
+   * agentes. Antes ela era lida de um `ref` para um botao que morava aqui; o
+   * botao mudou de casa e o `ref` foi junto, virando este parametro.
+   */
+  const openConfigPanel = useCallback(
+    (anchor: { x: number; y: number; width: number; height: number } | null) => {
+      void api.openConfigPanel(anchor)
+    },
+    [api],
+  )
 
   /* ------------------------------------------------------------ desenho -- */
 
@@ -357,42 +335,7 @@ export function DesktopGate() {
    * `shell--stacked` e a barra colada na borda direita: a engrenagem desce para
    * baixo da barra em vez de ficar espremida contra o canto da tela.
    */
-  return (
-    <TooltipProvider delayDuration={300}>
-      <div
-        className={cn(
-          'group/shell flex',
-          // Colada na borda direita: a engrenagem desce para baixo da barra em
-          // vez de ficar espremida contra o canto da tela.
-          rightEdge ? 'flex-col items-end gap-1.5' : 'flex-row items-end gap-1.5',
-        )}
-      >
-        {rightEdge && <App key={session} readyNotice={readyNotice} />}
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              ref={gearRef}
-              variant="ghost"
-              size="icon-sm"
-              type="button"
-              aria-label="Conexão"
-              onClick={openConfigPanel}
-              className={cn(
-                'app-no-drag mb-1.5 rounded-full opacity-0 transition-opacity',
-                'group-hover/shell:opacity-100 group-focus-within/shell:opacity-100 focus-visible:opacity-100',
-              )}
-            >
-              <SettingsIcon />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side={rightEdge ? 'left' : 'top'}>Conexão</TooltipContent>
-        </Tooltip>
-
-        {!rightEdge && <App key={session} readyNotice={readyNotice} />}
-      </div>
-    </TooltipProvider>
-  )
+  return <App key={session} readyNotice={readyNotice} onOpenConfig={openConfigPanel} />
 }
 
 /**

@@ -265,58 +265,11 @@
   }
 }
 
-/* ---- 3. O chip que se abre no hover ------------------------------------ */
-/*                                                                           */
-/* Nenhum registro tem isto: o `dock` do Magic UI e o `floating-dock` do      */
-/* Aceternity sao icones que crescem sob o cursor, nao um chip que REVELA     */
-/* conteudo. Sao tres propriedades animadas, e elas moram aqui porque a       */
-/* largura precisa sair de zero — um `w-0`/`w-auto` do Tailwind nao anima.    */
-/*                                                                           */
-/* O ESTADO E UM ATRIBUTO, NAO UMA SEGUNDA CLASSE.                           */
-/*                                                                           */
-/* Com duas classes (`reveal` e `reveal-open`) quem ganha e a que o Tailwind  */
-/* escreve por ultimo — e ele ordena as utilidades por conta propria, nao     */
-/* pela ordem deste arquivo. Ele punha `.reveal-open` ANTES de `.reveal`, e o */
-/* chip nunca abria. Um `&[data-open='true']` dentro da propria utilidade     */
-/* tem especificidade maior e nao depende de ordem nenhuma.                   */
-
-@utility reveal {
-  width: 0;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    width 0.24s cubic-bezier(0.22, 0.61, 0.36, 1),
-    margin-left 0.24s cubic-bezier(0.22, 0.61, 0.36, 1),
-    opacity 0.2s ease;
-
-  &[data-open='true'] {
-    width: var(--reveal-w, auto);
-    margin-left: var(--reveal-gap, 0.5rem);
-    opacity: 1;
-    overflow: visible;
-    pointer-events: auto;
-  }
-}
-
-/* O rotulo cresce por `max-width` porque o texto tem largura propria. */
-@utility reveal-text {
-  max-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  opacity: 0;
-  transition:
-    max-width 0.24s cubic-bezier(0.22, 0.61, 0.36, 1),
-    margin-left 0.24s cubic-bezier(0.22, 0.61, 0.36, 1),
-    opacity 0.2s ease;
-
-  &[data-open='true'] {
-    max-width: 9.5rem;
-    margin-left: 0.5rem;
-    opacity: 1;
-  }
-}
+/* (Aqui moravam as utilidades `reveal` e `reveal-text`, que animavam a largura
+   do chip de zero ate o conteudo. Elas sairam: animar o TAMANHO de uma janela
+   que veste o conteudo e uma briga que a janela sempre perde — ela chega
+   alguns quadros depois, e nesse meio tempo corta o que ha dentro. Agora o
+   chip so tem dois estados, e ele salta entre eles. Ver `CallingBar.tsx`.) */
 
 /* Quem pediu para o sistema parar de animar nao quer nada disto. */
 @media (prefers-reduced-motion: reduce) {
@@ -325,9 +278,6 @@
     animation: none;
   }
 
-  [class*='reveal'] {
-    transition: none;
-  }
 }
 
 /* ======================================================================== */

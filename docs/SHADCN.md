@@ -284,14 +284,13 @@ maior. Vale para qualquer par base/modificador escrito à mão.
 
 ### O que sobrou de CSS, e por quê
 
-**Oito utilidades**, em `src/index.css`, e cada uma tem um motivo que não é
+**Seis utilidades**, em `src/index.css`, e cada uma tem um motivo que não é
 preguiça:
 
 | Utilidade | Por que não tem pronto |
 | --- | --- |
 | `timer-track`, `timer-fill`, `timer-held` | o filete pausa por `animation-play-state`, junto com o relógio do JS — sem estado a mais e sem `requestAnimationFrame` |
 | `wave` | as três barrinhas do áudio: identidade visual, não componente |
-| `reveal`, `reveal-text` | o chip que revela conteúdo. `dock` e `floating-dock` são outra coisa: ícones que crescem sob o cursor |
 | `app-drag`, `app-no-drag` | `-webkit-app-region`: é Electron, não interface |
 
 Mais as regras de janela (transparência, `#root` do tamanho do conteúdo, a faixa
@@ -301,8 +300,8 @@ de 8px que arrasta). Também Electron.
 
 | | Antes | Depois |
 | --- | --- | --- |
-| CSS à mão | 2 134 linhas | 382 (tokens + 8 utilidades + regras de janela) |
-| Seletores de topo | 234 | 8 utilidades + 6 regras de janela |
+| CSS à mão | 2 134 linhas | 350 (tokens + 6 utilidades + regras de janela) |
+| Seletores de topo | 234 | 6 utilidades + 6 regras de janela |
 | Código em `web/src` | 5 794 linhas | 4 621 (sem contar `components/ui`) |
 | Componentes prontos | 0 | 25 |
 | JS (gzip) | 148,06 kB | 203,01 kB |

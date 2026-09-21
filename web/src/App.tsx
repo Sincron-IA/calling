@@ -16,6 +16,7 @@ import { createCallAdapter } from './gemini'
 import { agentColor, pickPreferredAgent, registerCall } from './agents'
 import {
   CallingBar,
+  type CallingBarProps,
   type AgentChange,
   type CallPhase,
   type ComposeState,
@@ -73,9 +74,11 @@ export interface AppProps {
    * abertura do app nao manda nada, de proposito.
    */
   readyNotice?: string
+  /** Abrir o painel de conexao — a engrenagem mora no cabecalho da lista. */
+  onOpenConfig?: CallingBarProps['onOpenConfig']
 }
 
-export function App({ readyNotice = '' }: AppProps) {
+export function App({ readyNotice = '', onOpenConfig }: AppProps) {
   const [agents, setAgents] = useState<AgentSummary[]>([])
   // Quem esta no chip: o ultimo agente com quem se falou. Uma ligacao por vez —
   // o bridge so aguenta uma sessao de voz.
@@ -484,6 +487,7 @@ export function App({ readyNotice = '' }: AppProps) {
         }
         onDismissMessage={(id) => setMessages((queue) => queue.filter((item) => item.id !== id))}
         onClearMessages={() => setMessages([])}
+        onOpenConfig={onOpenConfig}
         compose={compose}
         onDraftChange={(draft) => setCompose((state) => ({ ...state, draft }))}
         onSendMessage={() => void sendCompose()}
