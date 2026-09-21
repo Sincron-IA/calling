@@ -302,6 +302,10 @@ function Panel({
       {...rest}
       className={cn(
         'bg-popover text-popover-foreground app-no-drag flex flex-col overflow-hidden rounded-xl border text-left shadow-2xl',
+        /* Entrada curta e CURTA DE DISTANCIA: 4px de sobe-e-aparece, o mesmo
+           gesto do desenho aprovado. O painel nasce colado na barra, nao vindo
+           de fora da tela. */
+        'animate-in fade-in-0 slide-in-from-bottom-1 duration-150 ease-out',
         RAIL,
         className,
       )}

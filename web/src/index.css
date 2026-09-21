@@ -318,9 +318,32 @@ body.desktop-panel {
  * da largura da janela — senao os dois encolheriam um ao outro sem parar.
  */
 body.desktop-main {
+  /* A janela inteira, para haver o que distribuir. */
+  width: 100vw;
+  height: 100vh;
   min-height: 0;
   display: flex;
-  align-items: flex-start;
+
+  /*
+   * O CONTEUDO MORA NO CANTO QUE NAO SE MEXE.
+   *
+   * A janela e ancorada pelo canto de BAIXO A DIREITA: e esse canto que fica
+   * parado na tela quando ela muda de tamanho; os outros tres e que andam.
+   *
+   * O conteudo ficava encostado em cima e a esquerda — ou seja, justamente nos
+   * dois lados que se movem. Quando a janela cresce (e ela cresce com folga, de
+   * proposito, para nunca aparecer cortada), o canto de cima a esquerda dava um
+   * salto de 320px, e a barra ia junto: ela sumia para longe e voltava um
+   * instante depois, quando a folga era cortada. Era esse o "ela vem de algum
+   * lugar de longe".
+   *
+   * Encostada no canto de baixo a direita, ela nao anda mais: o que cresce e a
+   * parte transparente, para cima e para a esquerda, que e onde o menu e os
+   * avisos abrem.
+   */
+  align-items: flex-end;
+  justify-content: flex-end;
+
   /* A janela ja tem o tamanho do conteudo: nao ha o que rolar, e uma barra de
      rolagem de 15px aqui comeria justamente o conteudo que ela viria mostrar. */
   overflow: hidden;
