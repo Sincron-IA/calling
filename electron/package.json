@@ -1,0 +1,13 @@
+{
+  "name": "@calling/electron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Wrapper fino de desktop do Calling: so abre uma janela com o app web.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^44.4.3"
+  }
+}

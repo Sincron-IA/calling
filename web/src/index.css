@@ -1,0 +1,373 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-mono: 'Geist Mono', ui-monospace, 'Cascadia Mono', monospace;
+    --color-ok: var(--ok);
+    --color-faint: var(--faint);
+    --color-line-strong: var(--line-strong);
+    --font-sans: 'Geist Variable', sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Os tokens do Calling.                                                    */
+/*                                                                          */
+/* Sao os MESMOS valores aprovados no canvas plan-001, so que agora com os   */
+/* nomes que os componentes do shadcn ja leem. O app e escuro sempre: os     */
+/* dois blocos tem o mesmo conteudo para que nada dependa da classe `dark`   */
+/* ter sido aplicada a tempo numa janela sem moldura.                        */
+/*                                                                          */
+/* A cor forte e do AGENTE, nunca do tema: ela entra inline, por            */
+/* `--agent`. O tema fica quieto de proposito.                              */
+/* ---------------------------------------------------------------------- */
+:root,
+.dark {
+    color-scheme: dark;
+
+    --background: #0b0d10;
+    --foreground: #e9edf2;
+
+    --card: #14181d;
+    --card-foreground: #e9edf2;
+    --popover: #14181d;
+    --popover-foreground: #e9edf2;
+
+    /* Neutro de proposito: o verde de antes era a cor do agente padrao, nao a
+       cor do app. */
+    --primary: #e9edf2;
+    --primary-foreground: #0b0d10;
+
+    --secondary: #1b2027;
+    --secondary-foreground: #c7cdd6;
+
+    --muted: #1b2027;
+    --muted-foreground: #8b95a3;
+
+    --accent: #1e242c;
+    --accent-foreground: #e9edf2;
+
+    --destructive: #f87171;
+
+    --border: #242b33;
+    --input: #242b33;
+    --ring: #3a444f;
+
+    --radius: 0.875rem;
+
+    /* Fora da paleta do shadcn, mas do Calling: */
+    --ok: #4ade80;
+    --faint: #5f6975;
+    --line-strong: #2d3640;
+
+    --sidebar: #14181d;
+    --sidebar-foreground: #e9edf2;
+    --sidebar-primary: #e9edf2;
+    --sidebar-primary-foreground: #0b0d10;
+    --sidebar-accent: #1e242c;
+    --sidebar-accent-foreground: #e9edf2;
+    --sidebar-border: #242b33;
+    --sidebar-ring: #3a444f;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}
+/* ---------------------------------------------------------------------- */
+/* As duas janelas do desktop nao tem moldura: quem arrasta e o CSS.        */
+/* Utilitarios, para que o JSX nao precise de `style` inline nem de uma      */
+/* classe solta no `styles.css` antigo.                                     */
+/* ---------------------------------------------------------------------- */
+@utility app-drag {
+  -webkit-app-region: drag;
+}
+
+@utility app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ======================================================================== */
+/* O que NAO tem componente pronto.                                          */
+/*                                                                           */
+/* Tres coisas, e so tres. Elas nao sao "estilo que sobrou": sao             */
+/* comportamento que nenhum registro entrega, porque nao sao componentes de  */
+/* interface — sao a identidade do Calling e as regras de uma janela sem     */
+/* moldura. Ver `docs/SHADCN.md`.                                            */
+/* ======================================================================== */
+
+/* ---- 1. O filete que conta o tempo de tudo o que some sozinho ----------- */
+/*                                                                           */
+/* E uma animacao CSS de proposito: `animation-play-state` pausa junto com o  */
+/* relogio do JS quando o mouse entra, sem um estado a mais no React e sem    */
+/* um laco de `requestAnimationFrame` so para mover uma barra.               */
+
+@utility timer-track {
+  display: block;
+  height: 2px;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--foreground), transparent 94%);
+}
+
+@utility timer-fill {
+  display: block;
+  height: 100%;
+  background: var(--timer-color, var(--ok));
+  transform-origin: left center;
+  animation: calling-timer var(--timer-ms, 5000ms) linear forwards;
+}
+
+/* O mouse em cima: o relogio para, e o filete para junto. */
+@utility timer-held {
+  & > * {
+    animation-play-state: paused;
+  }
+}
+
+@keyframes calling-timer {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* ---- 2. As tres barrinhas do audio ------------------------------------- */
+/*                                                                           */
+/* Mudas quando parado, vivas na ligacao. Identidade visual, nao componente.  */
+/*                                                                           */
+/* As tres alturas em repouso sao DIFERENTES (7, 13, 9) de proposito: e isso  */
+/* que faz a silhueta ler como um equalizador parado, e nao como tres pontos  */
+/* iguais. Na migracao elas foram achatadas para 5px cada e o chip virou      */
+/* "...". Mesmos numeros do desenho aprovado, de volta.                       */
+
+@utility wave {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
+
+  & > i {
+    width: 3px;
+    border-radius: 999px;
+    background: var(--muted-foreground);
+    opacity: 0.55;
+    transition: background 0.2s ease, opacity 0.2s ease;
+  }
+
+  & > i:nth-child(1) {
+    height: 7px;
+  }
+
+  & > i:nth-child(2) {
+    height: 13px;
+  }
+
+  & > i:nth-child(3) {
+    height: 9px;
+  }
+
+  /* Na ligacao. Ver a nota sobre `data-` logo abaixo, no `reveal`. */
+  &[data-live='true'] > i {
+    background: var(--agent, var(--ok));
+    opacity: 0.9;
+    animation: calling-wave1 0.8s ease-in-out infinite;
+  }
+
+  &[data-live='true'] > i:nth-child(2) {
+    animation-name: calling-wave2;
+    animation-delay: 0.15s;
+  }
+
+  &[data-live='true'] > i:nth-child(3) {
+    animation-name: calling-wave3;
+    animation-delay: 0.3s;
+  }
+}
+
+@keyframes calling-wave1 {
+  0%,
+  100% {
+    height: 6px;
+  }
+  50% {
+    height: 15px;
+  }
+}
+
+@keyframes calling-wave2 {
+  0%,
+  100% {
+    height: 10px;
+  }
+  50% {
+    height: 18px;
+  }
+}
+
+@keyframes calling-wave3 {
+  0%,
+  100% {
+    height: 5px;
+  }
+  50% {
+    height: 12px;
+  }
+}
+
+/* (Aqui moravam as utilidades `reveal` e `reveal-text`, que animavam a largura
+   do chip de zero ate o conteudo. Elas sairam: animar o TAMANHO de uma janela
+   que veste o conteudo e uma briga que a janela sempre perde — ela chega
+   alguns quadros depois, e nesse meio tempo corta o que ha dentro. Agora o
+   chip so tem dois estados, e ele salta entre eles. Ver `CallingBar.tsx`.) */
+
+/* Quem pediu para o sistema parar de animar nao quer nada disto. */
+@media (prefers-reduced-motion: reduce) {
+  [data-live='true'] > i,
+  [class*='timer-fill'] {
+    animation: none;
+  }
+
+}
+
+/* ======================================================================== */
+/* As janelas do app de desktop                                              */
+/*                                                                           */
+/* Isto nao e componente nenhum: sao as regras de uma janela sem moldura,     */
+/* transparente e do tamanho do conteudo. Nenhum registro entrega isso        */
+/* porque nao e interface — e Electron.                                       */
+/* ======================================================================== */
+
+/*
+ * Janela transparente: so o cartao pinta.
+ *
+ * No navegador a pagina E o fundo. Nas duas janelas do app nao: elas nascem
+ * `transparent: true`, sem moldura, e o que se ve e exatamente o que a pagina
+ * pinta. Qualquer cor em `html`, `body` ou `#root` volta a ser um RETANGULO
+ * opaco em volta do cartao arredondado — era esse o "fundo preto" em volta da
+ * barra. Os tres precisam estar aqui: basta UM pintar para o retangulo voltar
+ * inteiro, porque o fundo do elemento raiz vira o fundo da janela toda.
+ */
+html.desktop-window,
+html.desktop-window body,
+html.desktop-window #root {
+  background: transparent;
+}
+
+/* O painel da engrenagem tem exatamente a altura do cartao (quem mede e o
+   `ConfigPanel`): nao ha pagina em volta para rolar nem para esticar. */
+body.desktop-panel {
+  min-height: 0;
+}
+
+/*
+ * A janela principal.
+ *
+ * Ela veste o TAMANHO DO CONTEUDO (o `DesktopGate` mede o `#root` e o Electron
+ * reancora no canto da tela). Por isso aqui nada pode depender de `100vh` nem
+ * da largura da janela — senao os dois encolheriam um ao outro sem parar.
+ */
+body.desktop-main {
+  /* A janela inteira, para haver o que distribuir. */
+  width: 100vw;
+  height: 100vh;
+  min-height: 0;
+  display: flex;
+
+  /*
+   * O CONTEUDO MORA NO CANTO QUE NAO SE MEXE.
+   *
+   * A janela e ancorada pelo canto de BAIXO A DIREITA: e esse canto que fica
+   * parado na tela quando ela muda de tamanho; os outros tres e que andam.
+   *
+   * O conteudo ficava encostado em cima e a esquerda — ou seja, justamente nos
+   * dois lados que se movem. Quando a janela cresce (e ela cresce com folga, de
+   * proposito, para nunca aparecer cortada), o canto de cima a esquerda dava um
+   * salto de 320px, e a barra ia junto: ela sumia para longe e voltava um
+   * instante depois, quando a folga era cortada. Era esse o "ela vem de algum
+   * lugar de longe".
+   *
+   * Encostada no canto de baixo a direita, ela nao anda mais: o que cresce e a
+   * parte transparente, para cima e para a esquerda, que e onde o menu e os
+   * avisos abrem.
+   */
+  align-items: flex-end;
+  justify-content: flex-end;
+
+  /* A janela ja tem o tamanho do conteudo: nao ha o que rolar, e uma barra de
+     rolagem de 15px aqui comeria justamente o conteudo que ela viria mostrar. */
+  overflow: hidden;
+}
+
+/* A faixa de 8px em volta do conteudo e a unica alca da janela sem moldura —
+   sem ela nao haveria por onde arrastar. `flex: 0 0 auto` e o que impede a
+   janela e o conteudo de encolherem um ao outro sem parar. */
+body.desktop-main #root {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 8px;
+  -webkit-app-region: drag;
+}
+
+/* O conteudo continua clicavel: so a faixa arrasta. */
+body.desktop-main #root > * {
+  -webkit-app-region: no-drag;
+}
+
+/* O painel da engrenagem: o cartao e a janela, entao ele ocupa tudo. */
+body.desktop-panel #root {
+  display: flex;
+  flex-direction: column;
+}

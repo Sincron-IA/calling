@@ -1,0 +1,166 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "calling",
+  "homepage": "https://github.com/sincronia-digital/calling",
+  "items": [
+    {
+      "name": "calling-theme",
+      "type": "registry:theme",
+      "title": "Tema do Calling",
+      "description": "Os tokens escuros do Calling e as tres coisas que nenhum registro entrega: o filete de tempo, a onda do audio e o chip que se abre no hover.",
+      "cssVars": {
+        "theme": {
+          "font-mono": "'Geist Mono', ui-monospace, 'Cascadia Mono', monospace"
+        },
+        "dark": {
+          "background": "#0b0d10",
+          "foreground": "#e9edf2",
+          "card": "#14181d",
+          "card-foreground": "#e9edf2",
+          "popover": "#14181d",
+          "popover-foreground": "#e9edf2",
+          "primary": "#e9edf2",
+          "primary-foreground": "#0b0d10",
+          "secondary": "#1b2027",
+          "secondary-foreground": "#c7cdd6",
+          "muted": "#1b2027",
+          "muted-foreground": "#8b95a3",
+          "accent": "#1e242c",
+          "accent-foreground": "#e9edf2",
+          "destructive": "#f87171",
+          "border": "#242b33",
+          "input": "#242b33",
+          "ring": "#3a444f",
+          "radius": "0.875rem",
+          "ok": "#4ade80"
+        }
+      },
+      "css": {
+        "@utility timer-track": {
+          "display": "block",
+          "height": "2px",
+          "overflow": "hidden",
+          "background": "color-mix(in oklch, var(--foreground), transparent 94%)"
+        },
+        "@utility timer-fill": {
+          "display": "block",
+          "height": "100%",
+          "background": "var(--timer-color, var(--ok))",
+          "transform-origin": "left center",
+          "animation": "calling-timer var(--timer-ms, 5000ms) linear forwards"
+        },
+        "@utility timer-held": {
+          "& > *": {
+            "animation-play-state": "paused"
+          }
+        },
+        "@keyframes calling-timer": {
+          "from": { "transform": "scaleX(1)" },
+          "to": { "transform": "scaleX(0)" }
+        },
+        "@utility app-drag": {
+          "-webkit-app-region": "drag"
+        },
+        "@utility app-no-drag": {
+          "-webkit-app-region": "no-drag"
+        }
+      }
+    },
+    {
+      "name": "agent-avatar",
+      "type": "registry:component",
+      "title": "Avatar do agente",
+      "description": "O disco de um agente: a imagem dele quando existe, a inicial quando nao. A cor do agente pinta a borda e o fundo da inicial — ela e a unica cor forte da interface.",
+      "registryDependencies": ["avatar"],
+      "files": [
+        {
+          "path": "src/AgentAvatar.tsx",
+          "type": "registry:component",
+          "target": "components/agent-avatar.tsx"
+        }
+      ]
+    },
+    {
+      "name": "calling-bar",
+      "type": "registry:block",
+      "title": "Barra do Calling",
+      "description": "A coluna de canto de tela: o chip que se abre no hover, o menu dos agentes, a fila de recados, o balao da resposta, o campo de escrever e o cartao de chamada recebida. Tudo em fluxo, nunca em portal — a janela do Electron tem o tamanho do conteudo.",
+      "registryDependencies": [
+        "badge",
+        "button",
+        "button-group",
+        "empty",
+        "input-group",
+        "item",
+        "kbd",
+        "scroll-area",
+        "separator",
+        "spinner",
+        "tooltip",
+        "https://calling.sincronia.digital/r/calling-theme.json",
+        "https://calling.sincronia.digital/r/agent-avatar.json"
+      ],
+      "dependencies": ["lucide-react", "radix-ui"],
+      "files": [
+        {
+          "path": "src/CallingBar.tsx",
+          "type": "registry:block",
+          "target": "components/calling-bar.tsx"
+        }
+      ]
+    },
+    {
+      "name": "agent-panel",
+      "type": "registry:block",
+      "title": "Painel de aparencia do agente",
+      "description": "Nome, cor e imagem de um agente numa gravacao so. A paleta e um ToggleGroup, o hex tem linha propria, e Salvar so acende quando algo mudou.",
+      "registryDependencies": [
+        "alert",
+        "button",
+        "field",
+        "input",
+        "input-group",
+        "item",
+        "separator",
+        "spinner",
+        "toggle-group",
+        "https://calling.sincronia.digital/r/agent-avatar.json"
+      ],
+      "dependencies": ["lucide-react"],
+      "files": [
+        {
+          "path": "src/AgentPanel.tsx",
+          "type": "registry:block",
+          "target": "components/agent-panel.tsx"
+        }
+      ]
+    },
+    {
+      "name": "connect-screen",
+      "type": "registry:block",
+      "title": "Tela de conexao",
+      "description": "Dois estados opostos: sem conexao, um formulario com UM botao; conectado, nenhum formulario — so o que esta guardado (copiavel, com a chave revelavel) e as saidas em ordem de peso.",
+      "registryDependencies": [
+        "alert",
+        "badge",
+        "button",
+        "button-group",
+        "field",
+        "input",
+        "input-group",
+        "item",
+        "separator",
+        "spinner",
+        "tooltip"
+      ],
+      "dependencies": ["lucide-react"],
+      "files": [
+        {
+          "path": "src/ConnectScreen.tsx",
+          "type": "registry:block",
+          "target": "components/connect-screen.tsx"
+        }
+      ]
+    }
+  ]
+}

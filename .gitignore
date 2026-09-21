@@ -1,0 +1,30 @@
+# deps
+node_modules/
+
+# build
+dist/
+build/
+*.tsbuildinfo
+
+# env / segredos (NUNCA commitar)
+.env
+.env.*
+!.env.example
+.sinc-env/
+.sincron/local/
+
+# electron
+electron/out/
+electron/dist/
+
+# logs e sistema
+*.log
+npm-debug.log*
+.DS_Store
+.vercel
+
+# runtime do /sincron-auto (state, current-story, review)
+.sincron-auto/
+
+# registro shadcn (derivado: `npm run build` regenera antes do Vite)
+web/public/r/

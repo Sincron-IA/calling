@@ -1,0 +1,11 @@
+{
+  "_comment": "Registro dos agentes que o Calling pode ligar — e que podem ligar de volta. O bridge le este arquivo e a UI o consome via GET /api/agents. Para adicionar um agente: acrescente uma entrada aqui (slug, nome, workspace, cor) e uma linha CALLING_RING_TOKEN_<SLUG> no .env privado da VPS. Nenhum segredo mora neste arquivo: ele e publico no GitHub.",
+  "agents": [
+    { "slug": "automa", "name": "Automa", "workspace": "/home/dgclaw-automa", "color": "#4ade80", "enabled": true },
+    { "slug": "ivo", "name": "Ivo", "workspace": "/home/dgclaw-ivo", "color": "#60a5fa", "enabled": true },
+    { "slug": "theo", "name": "Theo", "workspace": "/home/dgclaw-theo", "color": "#c084fc", "enabled": true },
+    { "slug": "bravo", "name": "Bravo", "workspace": "/home/dgclaw-bravo", "color": "#fbbf24", "enabled": true },
+    { "slug": "flow", "name": "Flow", "workspace": "/home/dgclaw-flow", "color": "#f472b6", "enabled": true },
+    { "slug": "vetor", "name": "Vetor", "workspace": "/home/dgclaw-vetor", "color": "#2dd4bf", "enabled": true }
+  ]
+}
