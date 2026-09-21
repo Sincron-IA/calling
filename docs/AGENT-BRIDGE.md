@@ -117,6 +117,40 @@ sessao-viva-falando-com-sessao-viva, nao para um programa externo. Tentar falar
 esse protocolo seria fragil e poderia corromper a sessao de um agente que esta
 no ar atendendo o dono. Ver `docs/sincron/DECISIONS.md`.
 
+## O método de trabalho numa ligação: "verificar" não é instantâneo
+
+Isto é uma limitação real do Calling, não um detalhe de implementação — leia
+antes de prometer ao seu usuário que o agente pode "checar" qualquer coisa
+enquanto está ao telefone.
+
+Uma ligação de voz roda numa sessão headless com pressão por resposta curta e
+imediata (ver Regra Zero do canal de voz, `identity.ts`). Isso funciona bem
+para perguntas que o agente já sabe responder. Não funciona para um pedido de
+**verificação/investigação de verdade** — ler log, checar código, testar um
+serviço, comparar coisas em arquivos diferentes — porque isso leva vários
+passos e não cabe no ritmo de uma conversa falada.
+
+Sem uma regra explícita para esse segundo caso, o caminho de menor resistência
+de um LLM sob pressão de responder rápido é **inventar uma resposta plausível**
+em vez de admitir que precisa de tempo. Foi exatamente o que aconteceu em
+21/09/2026 (ver `docs/sincron/DECISIONS.md`, mesma data): perguntado por que
+não conseguia mandar Telegram durante a ligação, o agente inventou uma história
+de "o plugin caiu" em vez de dizer a verdade simples (a ligação nunca tem essa
+ferramenta, por desenho).
+
+**A regra que corrige isso** (já embutida na Regra Zero do canal de voz, vale
+para os 6 agentes porque o texto é compartilhado): quando o pedido exigir
+investigação de múltiplos passos, o agente encerra a resposta falada com algo
+como *"vou finalizar a ligação pra verificar direito e te ligo de novo"* — e
+só depois disso investiga, com todo o tempo e ferramentas que precisar,
+voltando com o resultado real por `/api/ring` ou pelo canal próprio do agente
+(Telegram, no caso do DG Claw). Uma frase honesta reconhecendo que precisa de
+tempo é sempre melhor que uma resposta curta e errada.
+
+Se você está integrando outro agente com o Calling: implemente o equivalente
+dessa regra no system prompt de canal de voz dele. Não existe forma de o
+bridge impor isso de fora — é o texto do prompt que decide, não o transporte.
+
 ## Custo e latencia (medidos nesta VPS)
 
 - **Latencia:** ~6 s entre a pergunta e o inicio da fala da resposta, em turnos

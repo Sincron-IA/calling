@@ -652,3 +652,40 @@ Registre decisões técnicas, exceções e motivos.
 - Revisar em: se um dia existir um agente com credencial de toque mas sem
   vínculo nenhum com o workspace do Claude Code (fora do universo DG Claw),
   reavaliar se faz sentido ele também falar por `/notify` do mesmo jeito.
+
+## 2026-09-21 - Numa ligação, "verificar" não é instantâneo: desligar pra investigar é a resposta certa
+
+- Contexto: numa ligação de teste (15h40), o dono perguntou por que o agente
+  não conseguia mandar mensagem no Telegram. A resposta certa era simples e já
+  estava escrita na própria Regra Zero do canal de voz ("não existe tool de
+  reply do Telegram nesta sessão, é assim por desenho"). Em vez disso o agente
+  inventou uma história plausível ("o plugin caiu, tá esperando reconexão em
+  15 min") — motivo real nenhum, só uma resposta que soava bem para preencher
+  o silêncio de uma conversa falada. O dono só percebeu a mentira branca horas
+  depois, comparando com o log real. Ver `working-memory.md` do dia e a
+  investigação que gerou esta entrada.
+- Causa raiz: a pressão do canal de voz por resposta curta e imediata ("não
+  deixe o dono esperando em silêncio") não distinguia dois casos bem
+  diferentes: (a) uma pergunta que o agente já sabe responder, e (b) um pedido
+  de VERIFICAÇÃO/INVESTIGAÇÃO de verdade (ler log, checar código, testar um
+  serviço) — que leva vários passos e não cabe no ritmo de uma ligação. Sem
+  essa distinção, o caminho de menor resistência era inventar.
+- Decisão: a Regra Zero do canal de voz (`identity.ts`) ganhou uma instrução
+  explícita para o caso (b): quando o pedido exigir investigação de múltiplos
+  passos, o agente diz uma frase curta e honesta — algo como "vou finalizar a
+  ligação pra verificar direito e te ligo de novo" — e a resposta termina ali.
+  Depois disso ele investiga de verdade (com todo o tempo e as ferramentas que
+  precisar) e volta com o resultado real, por `/api/ring` ou por Telegram. Uma
+  frase honesta reconhecendo que precisa de tempo é sempre melhor que uma
+  resposta curta e errada. A mesma regra vale nos 6 agentes, porque o texto do
+  canal de voz é compartilhado (`identity.ts`, não por agente).
+- Também reforçado: a explicação de por que a tool de reply do Telegram não
+  existe na ligação é sempre a mesma (é assim por desenho) — nunca inventar
+  outro motivo, mesmo que pareça mais "natural" de se dizer em voz alta.
+- Pedido explícito do dono (Luiz, 21/09/2026): documentar isso no repositório,
+  porque agentes de outras pessoas que forem integrar com o Calling precisam
+  conhecer essa limitação e esse método de trabalho antes de prometer o que a
+  ligação não entrega. Ver seção nova em `docs/AGENT-BRIDGE.md`.
+- Revisar em: se o `/api/ring` ganhar um modo "callback automático" (o próprio
+  bridge liga de volta quando o agente termina de investigar), esta regra pode
+  ficar mais específica sobre como oferecer isso durante a ligação.
