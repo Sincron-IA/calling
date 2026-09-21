@@ -25,3 +25,6 @@ npm-debug.log*
 
 # runtime do /sincron-auto (state, current-story, review)
 .sincron-auto/
+
+# registro shadcn (derivado: `npm run build` regenera antes do Vite)
+web/public/r/
