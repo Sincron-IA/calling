@@ -100,8 +100,51 @@ caminho mais seguro e o recomendado para começar.
 ## Electron
 
 O wrapper roda local, apontando para o build (`web/dist`) ou para
-`CALLING_APP_URL`. **Empacotamento (`.exe`, `.dmg`, `.AppImage`) não está
-feito** — se precisar, adicionar `electron-builder` ao workspace `electron/`.
+`CALLING_APP_URL`.
+
+### Empacotamento (executável portátil)
+
+Feito, via `electron-builder` — configuração em `electron/electron-builder.yml`.
+Um comando só, na raiz do monorepo:
+
+```bash
+npm run electron:build
+```
+
+Ele roda o `npm run build` do `web` e empacota o wrapper **com o `web/dist`
+junto**, em `resources/web/dist` (fora do `asar`), que é exatamente onde o
+`electron/main.js` já procura — `path.join(__dirname, '..', 'web', 'dist')`
+resolve para lá dentro do pacote, sem precisar mudar o código.
+
+Saída em `electron/dist/` (ignorado pelo git). Alvos configurados, todos
+**portáteis**, sem instalador:
+
+| SO | Alvo | Artefato |
+| --- | --- | --- |
+| Windows | `portable` | `Calling-<versão>-portable.exe` |
+| macOS | `zip` (arm64 + x64) | `Calling-<versão>-<arch>-mac.zip` |
+| Linux | `AppImage` | `Calling-<versão>-x86_64.AppImage` |
+
+**Cada SO empacota o seu.** O electron-builder escolhe o alvo pela máquina onde
+roda; `.exe` no Linux exigiria wine e o `.app` de macOS só sai num Mac. Para o
+`.exe` e o `.zip`, rodar o mesmo comando na máquina Windows / no Mac (Node 20+,
+`npm install` antes). Dentro de `electron/` há `build:win`, `build:mac` e
+`build:linux` para forçar um alvo.
+
+Validado nesta VPS Linux: `Calling-0.1.0-x86_64.AppImage` (~126 MB) gerado com
+sucesso e o app empacotado sobe servindo o `web/dist` embutido no loopback.
+
+Pendências conhecidas (nenhuma bloqueia o build):
+
+- **Ícone do app**: sem `icon:` no `electron-builder.yml`. O único ícone do repo
+  é o da bandeja (`electron/assets/tray-icon.png`, 32x32) e o electron-builder
+  exige 256x256+; até existir um `assets/icon.png` grande, sai o ícone padrão do
+  Electron.
+- **Assinatura**: sem certificado Windows nem Apple. SmartScreen e Gatekeeper
+  vão avisar na primeira abertura.
+- A versão do Electron em `electron/package.json` ficou **fixa** (`44.4.3`, sem
+  `^`): o electron-builder recusa um intervalo porque precisa baixar o binário
+  de uma release exata.
 
 ## Regras
 

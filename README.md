@@ -1,5 +1,9 @@
 # Calling
 
+> Quer instalar isto para o SEU agente, fora da Sincron? Pule direto para
+> [`INSTALL.md`](INSTALL.md) — cada instalação sobe o próprio bridge,
+> isolado, sem depender de nada aqui.
+
 Ligacao por voz com os agentes DG Claw da Sincron (Automa, Ivo, Theo, Bravo,
 Flow, Vetor). O app fica quieto: so tres barrinhas num canto da tela.
 **Clicando nelas** aparece o avatar do ultimo agente chamado — um toque abre o
@@ -280,8 +284,44 @@ Para apontar para outro lugar (dev server ou a URL da Vercel):
 CALLING_APP_URL=http://localhost:5173 npm run electron
 ```
 
-Empacotar como `.exe`/`.dmg`/`.AppImage` ainda **nao** esta feito. Quando for
-preciso, o caminho e adicionar `electron-builder` ao workspace `electron/`.
+### Empacotar (executavel portatil, sem terminal)
+
+Para quem so quer **abrir o app clicando**, sem `npm` e sem terminal, o
+`electron-builder` ja esta configurado em
+[`electron/electron-builder.yml`](electron/electron-builder.yml). Um comando so,
+na raiz:
+
+```bash
+npm run electron:build
+```
+
+Ele faz o `npm run build` do `web` e empacota o wrapper junto com o `web/dist`
+ja pronto. O artefato sai em **`electron/dist/`**.
+
+Todos os alvos sao **portateis** — nada de instalador:
+
+| Sistema | Alvo | O que sai em `electron/dist/` |
+| --- | --- | --- |
+| Windows | `portable` | `Calling-0.1.0-portable.exe` — um `.exe` so, dois cliques |
+| macOS | `zip` (arm64 + x64) | `Calling-0.1.0-<arch>-mac.zip` — descompacta e abre o `.app` |
+| Linux | `AppImage` | `Calling-0.1.0-x86_64.AppImage` — `chmod +x` e executa |
+
+**Cada sistema empacota o seu.** O electron-builder escolhe o alvo pelo SO onde
+roda; gerar `.exe` no Linux precisaria de wine, e `.app` de macOS so sai num
+Mac. Entao o comando acima tem que rodar **na maquina Windows** (para o `.exe`)
+ou **no Mac** (para o `.zip`) — ambas so precisam de Node 20+ e um
+`npm install` antes. Para forcar um alvo especifico ha
+`npm run build:win` / `build:mac` / `build:linux` dentro de `electron/`.
+
+Dois detalhes conhecidos:
+
+- **Sem icone proprio ainda.** O unico icone do repo e o da bandeja (32x32) e o
+  electron-builder exige 256x256+ para o icone do aplicativo; enquanto isso o
+  pacote sai com o icone padrao do Electron. Basta por um `assets/icon.png`
+  grande e apontar `icon:` no `electron-builder.yml`.
+- **Sem assinatura.** Nao ha certificado Windows nem Apple no projeto, entao na
+  primeira abertura o SmartScreen (Windows) e o Gatekeeper (macOS, botao
+  direito > Abrir) vao pedir confirmacao.
 
 ## Deploy
 

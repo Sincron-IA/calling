@@ -73,7 +73,9 @@ npm run dev          # app web (porta 5173)
 npm run dev:server   # bridge (porta 8787)
 npm run build        # build do app web
 npm run typecheck    # checa tipos de web + server
-npm run electron     # app de desktop (usa o build de web/dist)
+npm run electron       # app de desktop em dev (usa o build de web/dist)
+npm run electron:build # empacota um executavel portatil pro SO onde rodar
+                        # (electron/dist/) — ver README.md "Empacotar"
 npm run registry --workspace=web   # gera o registro shadcn em web/public/r
 ```
 
