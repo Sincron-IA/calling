@@ -10,6 +10,19 @@
  */
 
 import { useCallback, useRef, useState, type CSSProperties } from 'react'
+import { ImageIcon, XIcon } from 'lucide-react'
+
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
+import { Item, ItemContent, ItemDescription, ItemMedia } from '@/components/ui/item'
+import { Separator } from '@/components/ui/separator'
+import { Spinner } from '@/components/ui/spinner'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { cn } from '@/lib/utils'
 import { saveIdentity, MAX_AVATAR_BYTES, type AgentSummary } from './bridge'
 
 /** Paleta de atalho. O hex continua aberto para quem quiser outra cor. */
@@ -37,7 +50,7 @@ function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(new Error('Nao consegui ler esse arquivo.'))
+    reader.onerror = () => reject(new Error('Não consegui ler esse arquivo.'))
     reader.readAsDataURL(file)
   })
 }
@@ -57,6 +70,11 @@ export function AgentPanel({ agent, color, avatar, onClose, onSaving, onSaved }:
   const preview = nextAvatar === undefined ? avatar : nextAvatar
   const colorOk = HEX.test(hex.trim())
 
+  /* Nada mudou -> nao ha o que salvar. Antes o botao ficava aceso sempre, e
+     salvar sem mudanca escrevia no workspace do agente a toa. */
+  const dirty =
+    name.trim() !== agent.name || hex.trim().toLowerCase() !== color.toLowerCase() || nextAvatar !== undefined
+
   const pickFile = useCallback(async (file: File | null) => {
     if (!file) return
     setError('')
@@ -67,18 +85,18 @@ export function AgentPanel({ agent, color, avatar, onClose, onSaving, onSaved }:
     try {
       setNextAvatar(await readAsDataUrl(file))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Nao consegui ler esse arquivo.')
+      setError(err instanceof Error ? err.message : 'Não consegui ler esse arquivo.')
     }
   }, [])
 
   const save = useCallback(async () => {
     const trimmed = name.trim()
     if (!trimmed) {
-      setError('O nome nao pode ficar vazio.')
+      setError('O nome não pode ficar vazio.')
       return
     }
     if (!colorOk) {
-      setError('A cor precisa ser um hex de 6 digitos, como #4ade80.')
+      setError('A cor precisa ser um hex de 6 dígitos, como #4ade80.')
       return
     }
 
@@ -96,19 +114,20 @@ export function AgentPanel({ agent, color, avatar, onClose, onSaving, onSaved }:
       onClose()
     } catch (err) {
       // Nada se perde: o painel continua aberto com tudo o que foi digitado.
-      setError(err instanceof Error ? err.message : 'Nao consegui salvar.')
+      setError(err instanceof Error ? err.message : 'Não consegui salvar.')
       setBusy(false)
     }
   }, [agent.slug, name, hex, colorOk, nextAvatar, onSaving, onSaved, onClose])
 
   const liveColor = colorOk ? hex.trim() : color
+  const initial = name.trim().slice(0, 1).toUpperCase() || '?'
 
   return (
     <div
-      className="panel"
+      className="bg-popover text-popover-foreground app-no-drag flex w-68 flex-col gap-3 rounded-xl border p-3 shadow-2xl"
       role="dialog"
       aria-label={`Aparência de ${agent.name}`}
-      style={{ '--panel-color': liveColor } as CSSProperties}
+      style={{ '--agent': liveColor } as CSSProperties}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.preventDefault()
@@ -116,29 +135,24 @@ export function AgentPanel({ agent, color, avatar, onClose, onSaving, onSaved }:
         }
       }}
     >
-      <div className="panel__top">
-        <span className="eyebrow">Aparência · {agent.slug}</span>
-        <button type="button" className="panel__close" onClick={onClose} aria-label="Fechar">
-          <svg
-            viewBox="0 0 24 24"
-            width="13"
-            height="13"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-          >
-            <path d="M18 6 6 18" />
-            <path d="m6 6 12 12" />
-          </svg>
-        </button>
-      </div>
+      <header className="flex items-center justify-between">
+        <span className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">
+          Aparência · {agent.slug}
+        </span>
+        <Button variant="ghost" size="icon-xs" type="button" onClick={onClose} aria-label="Fechar">
+          <XIcon />
+        </Button>
+      </header>
 
       {/* O topo inteiro aceita uma imagem arrastada — e o disco ja mostra o
           que vai ficar salvo, antes de salvar. */}
-      <div
-        className={`panel__head${dropping ? ' is-drop' : ''}`}
+      <Item
+        variant="muted"
+        size="sm"
+        className={cn(
+          'border border-dashed transition-colors',
+          dropping ? 'border-[var(--agent)] bg-[color-mix(in_oklch,var(--agent),transparent_88%)]' : 'border-border',
+        )}
         onDragOver={(event) => {
           if (busy) return
           event.preventDefault()
@@ -151,135 +165,142 @@ export function AgentPanel({ agent, color, avatar, onClose, onSaving, onSaved }:
           if (!busy) void pickFile(event.dataTransfer.files?.[0] ?? null)
         }}
       >
-        <span
-          className={`disc${preview ? ' disc--photo' : ''}`}
-          style={
-            {
-              '--disc-color': liveColor,
-              '--disc-size': '64px',
-              borderWidth: '2px',
-            } as CSSProperties
-          }
-          aria-hidden="true"
-        >
-          {preview ? <img className="disc__img" src={preview} alt="" /> : name.trim().slice(0, 1).toUpperCase() || '?'}
-        </span>
-        <div className="panel__pick">
-          <div className="panel__pick-row">
-            <button
+        <ItemMedia>
+          <Avatar className="size-12 border-2" style={{ borderColor: liveColor }}>
+            <AvatarImage src={preview || undefined} alt="" />
+            <AvatarFallback
+              className="font-medium"
+              style={{ background: `color-mix(in oklch, ${liveColor}, transparent 80%)`, color: liveColor }}
+            >
+              {initial}
+            </AvatarFallback>
+          </Avatar>
+        </ItemMedia>
+
+        <ItemContent className="gap-1.5">
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              size="xs"
               type="button"
-              className="panel__ghost"
               disabled={busy}
               onClick={() => fileRef.current?.click()}
             >
-              <svg
-                viewBox="0 0 24 24"
-                width="13"
-                height="13"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="3" width="18" height="18" rx="3" />
-                <circle cx="9" cy="9" r="2" />
-                <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
-              </svg>
+              <ImageIcon data-icon="inline-start" />
               {preview ? 'Trocar' : 'Imagem'}
-            </button>
+            </Button>
             {preview && (
-              <button
+              <Button
+                variant="ghost"
+                size="xs"
                 type="button"
-                className="panel__ghost panel__ghost--quiet"
                 disabled={busy}
                 onClick={() => setNextAvatar('')}
               >
                 Remover
-              </button>
+              </Button>
             )}
           </div>
-          <span className="panel__hint">
+          <ItemDescription className="text-xs">
             ou arraste aqui · até {Math.round(MAX_AVATAR_BYTES / 1024)} kB
-          </span>
-          <input
-            ref={fileRef}
-            type="file"
-            accept={ACCEPT}
-            hidden
-            onChange={(event) => {
-              void pickFile(event.target.files?.[0] ?? null)
-              // Escolher o MESMO arquivo de novo tem que disparar de novo.
-              event.target.value = ''
-            }}
-          />
-        </div>
-      </div>
+          </ItemDescription>
+        </ItemContent>
 
-      <label className="field">
-        <span className="field__label">Nome</span>
         <input
-          className="field__input"
-          value={name}
-          maxLength={40}
-          disabled={busy}
-          onChange={(event) => setName(event.target.value)}
+          ref={fileRef}
+          type="file"
+          accept={ACCEPT}
+          hidden
+          onChange={(event) => {
+            void pickFile(event.target.files?.[0] ?? null)
+            // Escolher o MESMO arquivo de novo tem que disparar de novo.
+            event.target.value = ''
+          }}
         />
-      </label>
+      </Item>
 
-      <div className="field">
-        <span className="field__label">Cor</span>
-        <div className="swatches">
-          {SWATCHES.map((swatch) => (
-            <button
-              key={swatch}
-              type="button"
-              className={`swatch${swatch.toLowerCase() === hex.trim().toLowerCase() ? ' is-on' : ''}`}
-              style={{ background: swatch, color: swatch }}
-              disabled={busy}
-              onClick={() => setHex(swatch)}
-              aria-label={`Cor ${swatch}`}
-              aria-pressed={swatch.toLowerCase() === hex.trim().toLowerCase()}
-            />
-          ))}
-          <input
-            className="field__input field__input--hex"
-            value={hex}
-            maxLength={7}
+      <FieldGroup className="gap-3">
+        <Field>
+          <FieldLabel htmlFor="agent-name">Nome</FieldLabel>
+          <Input
+            id="agent-name"
+            value={name}
+            maxLength={40}
             disabled={busy}
-            aria-label="Cor em hex"
-            aria-invalid={!colorOk}
-            onChange={(event) => setHex(event.target.value)}
+            onChange={(event) => setName(event.target.value)}
           />
-        </div>
-      </div>
+        </Field>
 
-      {error && <p className="panel__error">{error}</p>}
-
-      <div className="panel__rule" aria-hidden="true" />
-
-      <div className="panel__foot">
-        {/* O slug nao muda: ligacao, toque e sessao de texto continuam
-            encontrando o agente mesmo com nome novo. */}
-        <span className="panel__where">
-          grava no
-          <br />
-          workspace
-        </span>
-        <div className="panel__pick-row">
-          <button
-            type="button"
-            className="panel__ghost panel__ghost--quiet"
+        {/* A paleta e o hex sao a MESMA decisao, mas nao o mesmo controle:
+            antes o campo de texto morava dentro da fileira de cores, sem
+            rotulo proprio. */}
+        <Field data-invalid={!colorOk || undefined}>
+          <FieldLabel htmlFor="agent-hex">Cor</FieldLabel>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            className="w-full justify-between border-0 bg-transparent p-0 shadow-none"
+            value={SWATCHES.find((s) => s.toLowerCase() === hex.trim().toLowerCase()) ?? ''}
+            onValueChange={(value) => value && setHex(value)}
             disabled={busy}
-            onClick={onClose}
+            aria-label="Cores de atalho"
           >
-            Cancelar
-          </button>
-          <button type="button" className="panel__save" disabled={busy} onClick={() => void save()}>
-            {busy ? 'Salvando…' : 'Salvar'}
-          </button>
-        </div>
+            {SWATCHES.map((swatch) => (
+              <ToggleGroupItem
+                key={swatch}
+                value={swatch}
+                aria-label={`Cor ${swatch}`}
+                className="ring-offset-popover size-7 min-w-0 rounded-full border-0 p-0 data-[state=on]:ring-2 data-[state=on]:ring-offset-2"
+                style={{ background: swatch, ['--tw-ring-color' as string]: swatch }}
+              />
+            ))}
+          </ToggleGroup>
+          {/* O hex fica embaixo, em linha propria: espremido ao lado da paleta
+              ele nao cabia nem como campo nem como valor. */}
+          <InputGroup>
+            <InputGroupAddon>
+              <span
+                className="size-3.5 rounded-full border"
+                style={{ background: liveColor }}
+                aria-hidden="true"
+              />
+            </InputGroupAddon>
+            <InputGroupInput
+              id="agent-hex"
+              value={hex}
+              maxLength={7}
+              disabled={busy}
+              aria-invalid={!colorOk}
+              spellCheck={false}
+              className="font-mono text-xs"
+              onChange={(event) => setHex(event.target.value)}
+            />
+          </InputGroup>
+        </Field>
+      </FieldGroup>
+
+      {error && (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <Separator />
+
+      {/* O slug nao muda: ligacao, toque e sessao de texto continuam
+          encontrando o agente mesmo com nome novo. Isto era um `<br/>` no meio
+          da frase para caber ao lado dos botoes — agora tem a linha inteira. */}
+      <FieldDescription>Grava no workspace do agente, em {agent.slug}.</FieldDescription>
+
+      <div className="flex justify-end gap-1">
+        <Button variant="ghost" size="sm" type="button" disabled={busy} onClick={onClose}>
+          Cancelar
+        </Button>
+        <Button size="sm" type="button" disabled={busy || !dirty} onClick={() => void save()}>
+          {busy && <Spinner data-icon="inline-start" />}
+          {busy ? 'Salvando…' : 'Salvar'}
+        </Button>
       </div>
     </div>
   )

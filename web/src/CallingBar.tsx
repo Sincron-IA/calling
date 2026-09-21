@@ -1,3 +1,33 @@
+/**
+ * A BARRA.
+ *
+ * Uma coluna no canto da tela: o chip embaixo, e acima dele tudo o que abre —
+ * o menu dos agentes, a fila de recados, o balao da resposta, o campo de
+ * escrever, o cartao de chamada recebida.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ * POR QUE NADA AQUI USA `Popover`, `DropdownMenu` NEM `Sheet`
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * Todo componente de sobreposicao do shadcn (e do Radix por baixo) faz duas
+ * coisas: renderiza num portal no `body` e se posiciona com `position:
+ * absolute`. As duas quebram esta janela.
+ *
+ * A janela do app de desktop nao tem moldura e VESTE O TAMANHO DO CONTEUDO: o
+ * `DesktopGate` mede o `#root` com `getBoundingClientRect()` e o Electron
+ * reancora a janela no canto. Um portal sai do `#root`, e um filho posicionado
+ * fora da caixa nao entra na medida do pai — nos dois casos a janela nao
+ * cresce, e o menu nasce pintado FORA dela, cortado.
+ *
+ * Entao o que abre aqui fica EM FLUXO, nesta coluna. O que e "componente
+ * pronto" nao e o posicionamento — e o conteudo: `Item`, `ItemGroup`, `Empty`,
+ * `ScrollArea`, `Badge`, `Avatar`, `Button`, `InputGroup`, `Kbd`, `Spinner`,
+ * `Alert`. O `className` cuida do layout, que e o que `className` deve fazer.
+ *
+ * Isto esta registrado em `docs/SHADCN.md` — nao e um atalho, e a leitura
+ * certa da restricao.
+ */
+
 import {
   useCallback,
   useEffect,
@@ -7,9 +37,49 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
-import type { AgentSummary } from './bridge'
+import {
+  ArrowRightIcon,
+  BellIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  GripVerticalIcon,
+  PencilIcon,
+  PhoneIcon,
+  SendIcon,
+  XIcon,
+} from 'lucide-react'
+
+import { Slot } from 'radix-ui'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { ButtonGroup } from '@/components/ui/button-group'
+import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupTextarea,
+} from '@/components/ui/input-group'
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from '@/components/ui/item'
+import { Kbd } from '@/components/ui/kbd'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
+
+import { AgentAvatar, AgentAvatarStack } from './AgentAvatar'
 import { AgentPanel } from './AgentPanel'
-import { initialOf } from './agents'
+import type { AgentSummary } from './bridge'
 import { INCOMING_CALL_TIMEOUT_MS, type DeclineCause, type IncomingCall } from './incoming'
 
 /** Fase da ligacao que o Luiz fez (ou esta fazendo). */
@@ -23,6 +93,26 @@ export const REPLY_TIMEOUT_MS = 15000
 
 /** Depois de fechar o menu no clique, o hover fica surdo por este tempo. */
 const REOPEN_GUARD_MS = 600
+
+/*
+ * Intencao de hover.
+ *
+ * Abrir e fechar na hora exata do `pointerenter`/`pointerleave` transformava
+ * qualquer tremida de 1px — ou um reposicionamento da janela — em um ciclo
+ * abre/fecha. Com uma pausa curta na entrada e uma mais longa na saida, o
+ * gesto precisa ser deliberado, e o caminho de volta perdoa o desvio.
+ */
+/** Quanto tempo o mouse fica sobre a barra antes de ela acender. */
+const HOVER_OPEN_MS = 90
+
+/** Quanto tempo a barra fica acesa depois que o mouse sai. */
+const HOVER_CLOSE_MS = 260
+
+/** O mesmo, para o chevron que abre a lista no hover. */
+const MENU_OPEN_MS = 160
+
+/** Largura da coluna: uma so, para a janela nao mudar de largura ao abrir. */
+const RAIL = 'w-68'
 
 /** O campo de escrever. `agentSlug` vazio = fechado. */
 export interface ComposeState {
@@ -43,10 +133,6 @@ export interface ReplyBubble {
 }
 
 /**
- * Um agente mudou a propria cara (pelo arquivo dele na VPS, nao por aqui).
- * Guardamos o ANTES para mostrar antes -> depois num olhar.
- */
-/**
  * Um recado que o agente empurrou, guardado na fila.
  *
  * O balao mostra o mais novo e sai sozinho — mas quem estava ocupado nao pode
@@ -63,6 +149,10 @@ export interface QueuedMessage {
   read: boolean
 }
 
+/**
+ * Um agente mudou a propria cara (pelo arquivo dele na VPS, nao por aqui).
+ * Guardamos o ANTES para mostrar antes -> depois num olhar.
+ */
 export interface AgentChange {
   slug: string
   /** "trocou de cor", "trocou de nome", "trocou a imagem"... */
@@ -125,6 +215,8 @@ export interface CallingBarProps {
   onClearMessages?: () => void
 }
 
+/* ------------------------------------------------------------- utilidades -- */
+
 /** Hora do recado na fila: so hora e minuto, que e o que ajuda a se localizar. */
 function formatClock(at: number): string {
   const when = new Date(at)
@@ -140,210 +232,86 @@ function formatDuration(ms: number): string {
   return `${minutes}:${seconds}`
 }
 
-/* ---------------------------------------------------------------- icones -- */
-
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-      <path
-        d="M3.5 8.5l3 3 6-7"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function PhoneIcon({ size = 13 }: { size?: number }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={size}
-      height={size}
-      aria-hidden="true"
-      focusable="false"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
-    </svg>
-  )
-}
-
-function CloseIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-      <path
-        d="M4 4l8 8M12 4l-8 8"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
-/** Aviaozinho: a acao DESPACHA um recado — nao edita um texto parado. */
-function SendIcon({ size = 15 }: { size?: number }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={size}
-      height={size}
-      aria-hidden="true"
-      focusable="false"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="m22 2-7 20-4-9-9-4Z" />
-      <path d="M22 2 11 13" />
-    </svg>
-  )
-}
-
-/** Lapis: aqui SIM e editar — a aparencia do agente. */
-function PencilIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="8"
-      height="8"
-      aria-hidden="true"
-      focusable="false"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-    </svg>
-  )
-}
-
-/** Sininho da fila de recados. */
-function BellIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="14"
-      height="14"
-      aria-hidden="true"
-      focusable="false"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-      <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-    </svg>
-  )
-}
-
-function ArrowIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="14"
-      height="14"
-      aria-hidden="true"
-      focusable="false"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M5 12h14" />
-      <path d="m12 5 7 7-7 7" />
-    </svg>
-  )
-}
-
-/** Os tres pontos do "esta pensando". */
-function Thinking() {
-  return (
-    <span className="thinking" aria-hidden="true">
-      <i />
-      <i />
-      <i />
-    </span>
-  )
-}
-
-function ChevronIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" focusable="false">
-      <path
-        d="M4 6.5l4 4 4-4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-/* --------------------------------------------------------------- avatares -- */
-
-interface AvatarProps {
-  name: string
-  color: string
-  size: number
+/** Rotulo pequeno em caixa alta: "Agentes", "Para", o nome no balao. */
+function Eyebrow({
+  className,
+  style,
+  children,
+}: {
   className?: string
   style?: CSSProperties
-  /** Imagem do agente. Vazio (ou que nao carrega) cai na inicial. */
-  src?: string
+  children: ReactNode
+}) {
+  return (
+    <span
+      className={cn(
+        'text-muted-foreground font-mono text-[0.625rem] leading-none tracking-[0.08em] uppercase',
+        className,
+      )}
+      style={style}
+    >
+      {children}
+    </span>
+  )
 }
 
 /**
- * Disco do agente: a imagem dele quando existe, a inicial quando nao.
+ * O filete que conta o tempo.
  *
- * A imagem que nao carrega volta para a inicial — nunca para um icone
- * quebrado. E por isso que ela e um `<img>` de verdade, e nao um
- * `background-image`: so a tag avisa quando falha.
+ * `key` novo reinicia a animacao — e por isso que quem chama passa o conteudo
+ * como chave: dois recados seguidos nao herdam o relogio um do outro.
  */
-function AgentDisc({ name, color, size, className, style, src = '' }: AvatarProps) {
-  const [failed, setFailed] = useState(false)
-
-  useEffect(() => {
-    setFailed(false)
-  }, [src])
-
-  const showImage = Boolean(src) && !failed
-
+function Timer({ ms, color, held = false }: { ms: number; color?: string; held?: boolean }) {
   return (
     <span
-      className={`disc${showImage ? ' disc--photo' : ''}${className ? ` ${className}` : ''}`}
-      style={
-        {
-          ...style,
-          '--disc-color': color,
-          '--disc-size': `${size}px`,
-        } as CSSProperties
-      }
+      className={cn('timer-track', held && 'timer-held')}
+      style={{ '--timer-ms': `${ms}ms`, '--timer-color': color } as CSSProperties}
       aria-hidden="true"
     >
-      {showImage ? (
-        <img className="disc__img" src={src} alt="" onError={() => setFailed(true)} />
-      ) : (
-        initialOf(name)
-      )}
+      <span className="timer-fill" />
     </span>
+  )
+}
+
+/**
+ * A casca de tudo o que abre acima do chip: mesma largura, mesmo cartao.
+ *
+ * `asChild` porque os avisos (recado, mudanca, balao) sao um BOTAO inteiro —
+ * clicar em qualquer lugar deles fecha —, e um `<button>` dentro de um `<div>`
+ * de cartao daria duas caixas para alinhar em vez de uma.
+ */
+function Panel({
+  className,
+  asChild = false,
+  children,
+  ...rest
+}: {
+  className?: string
+  asChild?: boolean
+  children: ReactNode
+} & React.ComponentProps<'div'>) {
+  const Comp = asChild ? Slot.Root : "div"
+  return (
+    <Comp
+      {...rest}
+      className={cn(
+        'bg-popover text-popover-foreground app-no-drag flex flex-col overflow-hidden rounded-xl border text-left shadow-2xl',
+        RAIL,
+        className,
+      )}
+    >
+      {children}
+    </Comp>
+  )
+}
+
+/** Cabecalho de um painel: rotulo a esquerda, ferramentas a direita. */
+function PanelHead({ label, children }: { label: string; children?: ReactNode }) {
+  return (
+    <div className="flex h-8 items-center justify-between gap-2 px-2.5">
+      <Eyebrow>{label}</Eyebrow>
+      <div className="flex items-center gap-0.5">{children}</div>
+    </div>
   )
 }
 
@@ -375,43 +343,74 @@ function IncomingCard({
   // (duplo clique, undo), e aqui dentro que ela entra, sem mexer no resto.
   const approve = useCallback(() => onApprove(call), [onApprove, call])
 
+  // Quanto ainda falta para o toque morrer sozinho. Quem manda e o SERVIDOR
+  // (`expiresAt`); a constante local so cobre o caso de ele nao ter mandado.
+  const expiresAt = call.expiresAt ?? call.receivedAt + INCOMING_CALL_TIMEOUT_MS
+  const left = Math.max(0, expiresAt - Date.now())
+
   return (
-    <div
-      className={`incoming${inline ? ' incoming--inline' : ''}`}
-      style={{ '--ring': color } as CSSProperties}
+    <Panel
       role="group"
       aria-label={`Chamada de ${agentName}`}
+      className={cn(!inline && 'ring-1', RAIL)}
+      style={
+        {
+          '--agent': color,
+          borderColor: `color-mix(in oklch, ${color}, transparent 55%)`,
+          // O brilho e do CARTAO destacado; na lista ele viraria seis brilhos.
+          boxShadow: inline ? undefined : `0 0 0 1px ${color}22, 0 18px 40px -20px ${color}55`,
+        } as CSSProperties
+      }
     >
-      <div className="incoming__head">
-        <AgentDisc name={agentName} color={color} size={24} src={avatar} />
-        <span className="incoming__name">{agentName}</span>
-      </div>
-      <p className="incoming__reason">{call.reason}</p>
-      <div className="incoming__actions">
-        <button type="button" className="pill pill--approve" onClick={approve}>
-          <CheckIcon />
+      <Item size="sm" className="border-0">
+        <ItemMedia>
+          <AgentAvatar name={agentName} color={color} src={avatar} size={24} />
+        </ItemMedia>
+        <ItemContent>
+          <ItemTitle style={{ color }}>{agentName}</ItemTitle>
+        </ItemContent>
+      </Item>
+
+      <p className="text-foreground px-3 pb-2.5 text-sm leading-snug">{call.reason}</p>
+
+      <div className="flex items-center gap-1 px-2.5 pb-2.5">
+        <Button size="sm" className="flex-1" onClick={approve}>
+          <CheckIcon data-icon="inline-start" />
           Aprovar
-        </button>
-        <button
-          type="button"
-          className="round"
-          onClick={() => onAnswer(call)}
-          title="Atender por voz"
-          aria-label={`Atender ${agentName} por voz`}
-        >
-          <PhoneIcon />
-        </button>
-        <button
-          type="button"
-          className="round"
-          onClick={() => onDecline(call, 'manual')}
-          title="Recusar"
-          aria-label={`Recusar a chamada de ${agentName}`}
-        >
-          <CloseIcon />
-        </button>
+        </Button>
+        <ButtonGroup>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={() => onAnswer(call)}
+                aria-label={`Atender ${agentName} por voz`}
+              >
+                <PhoneIcon />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Atender por voz</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={() => onDecline(call, 'manual')}
+                aria-label={`Recusar a chamada de ${agentName}`}
+              >
+                <XIcon />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Recusar — cai para o Telegram</TooltipContent>
+          </Tooltip>
+        </ButtonGroup>
       </div>
-    </div>
+
+      {/* O toque nao fica de pe para sempre, e o filete diz quanto falta. */}
+      <Timer key={call.id} ms={left} color={color} />
+    </Panel>
   )
 }
 
@@ -468,11 +467,49 @@ export function CallingBar({
    *
    * Fechar encolhe a janela do app (ela tem o tamanho do conteudo), e a
    * geometria nova debaixo do cursor faz o Chromium disparar um
-   * `pointerenter` NOVO no chevron — que reabria o menu na hora. O resultado
-   * era um chevron que so sabia abrir. Ignoramos o hover logo depois de um
-   * fechamento deliberado.
+   * `pointerenter` NOVO no chevron — que reabria o menu na hora. Ignoramos o
+   * hover logo depois de um fechamento deliberado.
    */
   const closedAtRef = useRef(0)
+
+  /*
+   * A ZONA DE HOVER E A BARRA INTEIRA, nao o chip.
+   *
+   * O chip era, ao mesmo tempo, o alvo do hover, a alca de arrastar a janela
+   * (`app-drag`) e o que muda de largura na animacao. Com isso cada quadro da
+   * transicao recalculava a regiao de arraste e o Windows refazia o hit-test —
+   * `pointerleave` e `pointerenter` sinteticos, a barra piscando. Alem disso, o
+   * menu, o balao e o campo de escrever sao IRMAOS do chip, separados por um
+   * `gap`: atravessar esse vao ja era sair do chip.
+   *
+   * A coluna engloba todos eles e o vao entre eles, e nao e regiao de arraste.
+   */
+  const hoverTimerRef = useRef(0)
+  const menuTimerRef = useRef(0)
+
+  const setHoverNow = useCallback((value: boolean) => {
+    window.clearTimeout(hoverTimerRef.current)
+    setHovered(value)
+  }, [])
+
+  const onBarEnter = useCallback(() => {
+    window.clearTimeout(hoverTimerRef.current)
+    hoverTimerRef.current = window.setTimeout(() => setHovered(true), HOVER_OPEN_MS)
+  }, [])
+
+  const onBarLeave = useCallback(() => {
+    window.clearTimeout(hoverTimerRef.current)
+    window.clearTimeout(menuTimerRef.current)
+    hoverTimerRef.current = window.setTimeout(() => setHovered(false), HOVER_CLOSE_MS)
+  }, [])
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(hoverTimerRef.current)
+      window.clearTimeout(menuTimerRef.current)
+    },
+    [],
+  )
 
   const nameOf = useCallback(
     (slug: string) => agents.find((a) => a.slug === slug)?.name ?? slug,
@@ -658,21 +695,26 @@ export function CallingBar({
   const active = phase !== 'idle'
   const ringing = incoming.length > 0
 
+  /** A coluna. Alinhada a direita, de baixo para cima. */
+  const column = 'flex flex-col items-end gap-2'
+
   /* ---- 1 chamada recebida: o cartao destacado, com o brilho pulsando ---- */
   if (ringing && incoming.length === 1) {
     const call = incoming[0]
     return (
-      <div className="bar bar--ringing" ref={rootRef}>
-        <IncomingCard
-          call={call}
-          agentName={nameOf(call.agentSlug)}
-          color={colorOf(call.agentSlug)}
-          avatar={avatarOf?.(call.agentSlug)}
-          onApprove={onApprove}
-          onAnswer={onAnswer}
-          onDecline={onDecline}
-        />
-      </div>
+      <TooltipProvider delayDuration={300}>
+        <div className={column} ref={rootRef}>
+          <IncomingCard
+            call={call}
+            agentName={nameOf(call.agentSlug)}
+            color={colorOf(call.agentSlug)}
+            avatar={avatarOf?.(call.agentSlug)}
+            onApprove={onApprove}
+            onAnswer={onAnswer}
+            onDecline={onDecline}
+          />
+        </div>
+      </TooltipProvider>
     )
   }
 
@@ -681,55 +723,62 @@ export function CallingBar({
     // O mais recente por cima: desenhamos do fim para o comeco.
     const stack = [...incoming].reverse()
     return (
-      <div className="bar bar--ringing" ref={rootRef}>
-        {stackOpen && (
-          <div className="stack__list" role="list">
-            {stack.map((call) => (
-              <div role="listitem" key={call.id}>
-                <IncomingCard
-                  call={call}
-                  agentName={nameOf(call.agentSlug)}
-                  color={colorOf(call.agentSlug)}
-                  avatar={avatarOf?.(call.agentSlug)}
-                  onApprove={onApprove}
-                  onAnswer={onAnswer}
-                  onDecline={onDecline}
-                  inline
-                />
+      <TooltipProvider delayDuration={300}>
+        <div className={column} ref={rootRef}>
+          {stackOpen && (
+            <ScrollArea className={cn('max-h-105', RAIL)}>
+              <div className={cn(column, 'pr-1')} role="list">
+                {stack.map((call) => (
+                  <div role="listitem" key={call.id}>
+                    <IncomingCard
+                      call={call}
+                      agentName={nameOf(call.agentSlug)}
+                      color={colorOf(call.agentSlug)}
+                      avatar={avatarOf?.(call.agentSlug)}
+                      onApprove={onApprove}
+                      onAnswer={onAnswer}
+                      onDecline={onDecline}
+                      inline
+                    />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-        <button
-          type="button"
-          className="stack"
-          onClick={() => setStackOpen((open) => !open)}
-          aria-expanded={stackOpen}
-          aria-label={`${incoming.length} agentes chamando`}
-        >
-          <span className="stack__discs">
-            {stack.map((call, index) => (
-              <AgentDisc
-                key={call.id}
-                name={nameOf(call.agentSlug)}
-                color={colorOf(call.agentSlug)}
-                src={avatarOf?.(call.agentSlug)}
-                size={30}
-                className="stack__disc"
-                // Quem chamou por ultimo fica por cima da pilha.
-                style={{ zIndex: stack.length - index }}
-              />
-            ))}
-          </span>
-          <span className="stack__label">{incoming.length} chamando</span>
-        </button>
-      </div>
+            </ScrollArea>
+          )}
+
+          <Button
+            variant="outline"
+            className="app-no-drag bg-popover h-11 rounded-full pr-3.5 pl-2.5 shadow-2xl"
+            onClick={() => setStackOpen((open) => !open)}
+            aria-expanded={stackOpen}
+            aria-label={`${incoming.length} agentes chamando`}
+          >
+            {/* Quem chamou por ultimo abre a pilha, a esquerda, por cima. */}
+            <AgentAvatarStack
+              size={30}
+              overlap={10}
+              thick
+              items={stack.map((call) => ({
+                key: call.id,
+                name: nameOf(call.agentSlug),
+                color: colorOf(call.agentSlug),
+                src: avatarOf?.(call.agentSlug),
+              }))}
+            />
+            {incoming.length} chamando
+            <ChevronDownIcon
+              data-icon="inline-end"
+              className={cn('transition-transform', stackOpen && 'rotate-180')}
+            />
+          </Button>
+        </div>
+      </TooltipProvider>
     )
   }
 
   /* ---- Parado / na linha: um chip so, quieto ---- */
   const open = hovered || menuOpen
-  const label: ReactNode =
+  const label =
     phase === 'in-call' && callStartedAt !== null
       ? `${current.name} · ${formatDuration(now - callStartedAt)}`
       : phase === 'calling'
@@ -737,511 +786,591 @@ export function CallingBar({
         : current.name
 
   return (
-    <div className="bar" ref={rootRef}>
-      {/* Recado curto, em fluxo como o menu — ver o porque logo abaixo. */}
-      {notice && (
-        <button
-          type="button"
-          className="notice"
-          onClick={() => onNoticeDone?.()}
-          aria-live="polite"
-          title="Fechar"
-        >
-          <span className="notice__line">
-            <span className="notice__dot" aria-hidden="true" />
-            <span className="notice__text">{notice}</span>
-          </span>
-          {/* Quem esta na linha, num olhar: os discos e o numero. */}
-          <span className="notice__foot">
-            <span className="notice__discs" aria-hidden="true">
-              {agents.slice(0, 6).map((agent) => (
-                <AgentDisc
-                  key={agent.slug}
-                  name={agent.name}
-                  color={colorOf(agent.slug)}
-                  src={avatarOf?.(agent.slug)}
+    <TooltipProvider delayDuration={300}>
+      <div className={column} ref={rootRef} onPointerEnter={onBarEnter} onPointerLeave={onBarLeave}>
+        {/* Recado curto. Em fluxo como todo o resto — ver o cabecalho. */}
+        {notice && (
+          <Panel asChild>
+            <button type="button" onClick={() => onNoticeDone?.()} aria-live="polite" title="Fechar">
+              <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
+                <span className="bg-ok size-1.5 shrink-0 rounded-full" aria-hidden="true" />
+                <span className="text-foreground text-left text-sm">{notice}</span>
+              </div>
+
+              {/* Quem esta na linha, num olhar: os discos e o numero. */}
+              <div className="flex items-center justify-between gap-2 px-3 pb-2.5">
+                <AgentAvatarStack
                   size={24}
+                  overlap={8}
+                  items={agents.slice(0, 6).map((agent) => ({
+                    key: agent.slug,
+                    name: agent.name,
+                    color: colorOf(agent.slug),
+                    src: avatarOf?.(agent.slug),
+                  }))}
                 />
-              ))}
-            </span>
-            <span className="eyebrow">
-              {agents.length === 1 ? '1 agente' : `${agents.length} agentes`}
-            </span>
-          </span>
-          <span
-            key={notice}
-            className="timer"
-            style={{ '--timer-ms': `${NOTICE_TIMEOUT_MS}ms` } as CSSProperties}
-            aria-hidden="true"
-          >
-            <span className="timer__fill" />
-          </span>
-        </button>
-      )}
+                <Eyebrow>
+                  {agents.length === 1 ? '1 agente' : `${agents.length} agentes`}
+                </Eyebrow>
+              </div>
 
-      {/* Um agente mudou a propria cara pela VPS: antes -> depois. */}
-      {change && (
-        <button
-          type="button"
-          className="notice"
-          onClick={() => onChangeDone?.()}
-          aria-live="polite"
-          title="Fechar"
-        >
-          <span className="notice__line">
-            <span className="notice__swap" aria-hidden="true">
-              <AgentDisc name={change.beforeName} color={change.beforeColor} size={28} />
-              <ArrowIcon />
-              <AgentDisc
-                name={nameOf(change.slug)}
-                color={colorOf(change.slug)}
-                src={avatarOf?.(change.slug)}
-                size={28}
-              />
-            </span>
-            <span className="notice__text">
-              {change.beforeName} {change.what}
-              <span className="notice__sub">pelo próprio workspace</span>
-            </span>
-          </span>
-          <span
-            key={`${change.slug}:${change.what}`}
-            className="timer"
-            style={
-              {
-                '--timer-ms': `${NOTICE_TIMEOUT_MS}ms`,
-                '--timer-color': colorOf(change.slug),
-              } as CSSProperties
-            }
-            aria-hidden="true"
-          >
-            <span className="timer__fill" />
-          </span>
-        </button>
-      )}
+              <Timer key={notice} ms={NOTICE_TIMEOUT_MS} />
+            </button>
+          </Panel>
+        )}
 
-      {/* A ULTIMA resposta, ou o ultimo erro. Nunca dois: quem manda outra
-          mensagem troca o que esta aqui. */}
-      {reply && (
-        <button
-          type="button"
-          className={`bubble${reply.isError ? ' bubble--error' : ''}`}
-          style={{ '--bubble-color': colorOf(reply.agentSlug) } as CSSProperties}
-          onClick={() => onReplyDone?.()}
-          onPointerEnter={() => setReplyHeld(true)}
-          onPointerLeave={() => setReplyHeld(false)}
-          aria-live="polite"
-          title="Fechar"
-        >
-          <span className="bubble__head">
-            <span className="eyebrow bubble__who">
-              {reply.isError ? 'não consegui mandar' : nameOf(reply.agentSlug)}
-            </span>
-            {reply.echoed ? (
-              <span className="bubble__echo">
-                <CheckIcon />
-                na thread
-              </span>
-            ) : (
-              <span className="bubble__close">clique para fechar</span>
-            )}
-          </span>
-          <span className="bubble__text">{reply.text}</span>
-          {/* Erro nao tem relogio: fica ate alguem decidir. */}
-          {!reply.isError && (
-            <span
-              key={`${reply.agentSlug}:${reply.text}`}
-              className={`timer${replyHeld ? ' is-held' : ''}`}
-              style={
-                {
-                  '--timer-ms': `${REPLY_TIMEOUT_MS}ms`,
-                  '--timer-color': colorOf(reply.agentSlug),
-                } as CSSProperties
-              }
-              aria-hidden="true"
+        {/* Um agente mudou a propria cara pela VPS: antes -> depois. */}
+        {change && (
+          <Panel asChild>
+            <button
+              type="button"
+              onClick={() => onChangeDone?.()}
+              aria-live="polite"
+              title="Fechar"
             >
-              <span className="timer__fill" />
-            </span>
-          )}
-        </button>
-      )}
-
-      {/* O MENU E IRMAO DO CHIP, NAO FILHO — e nao e posicionado.
-          A janela do app tem o tamanho do conteudo, e quem o mede e o
-          `getBoundingClientRect()` do `#root`, que IGNORA filho posicionado
-          fora da caixa de borda. Menu absoluto = janela que nao cresce = menu
-          pintado fora dela e cortado. Em fluxo, dentro desta coluna, a janela
-          cresce sozinha e a ancora de canto (`electron/main.js`) faz ela subir
-          em vez de escorregar. No navegador da no mesmo: `.bar` e uma coluna
-          ancorada pelo `bottom`. */}
-      {menuOpen && agents.length > 0 && (
-        <div className="menu" role="menu" aria-label="Agentes">
-          <div className="menu__head" role="presentation">
-            <span className="eyebrow">Agentes</span>
-            <span className="menu__tools">
-              <span className="eyebrow menu__online">
-                {agents.length === 1 ? '1 na linha' : `${agents.length} na linha`}
-              </span>
-              {/* A fila de recados. Discreta: so o sininho, com um ponto
-                  quando ha coisa nova. Some quando nunca houve recado. */}
-              {messages.length > 0 && (
-                <button
-                  type="button"
-                  className={`menu__tool${unread > 0 ? ' has-new' : ''}`}
-                  onClick={openQueue}
-                  title="Recados dos agentes"
-                  aria-label={
-                    unread > 0 ? `Recados dos agentes (${unread} novos)` : 'Recados dos agentes'
-                  }
-                >
-                  <BellIcon />
-                  {unread > 0 && <span className="menu__badge">{unread > 9 ? '9+' : unread}</span>}
-                </button>
-              )}
-              <button
-                type="button"
-                className="menu__tool"
-                onClick={closeMenu}
-                title="Fechar"
-                aria-label="Fechar a lista"
-              >
-                <CloseIcon />
-              </button>
-            </span>
-          </div>
-          {agents.map((agent) => {
-            const isCurrent = agent.slug === current.slug
-            return (
-              /* A LINHA NAO E MAIS CLICAVEL. Escrever vai ser a acao mais
-                 frequente, mas ela nao pode virar o clique padrao: quem hoje
-                 clica na linha esperando LIGAR passaria a errar todas as vezes.
-                 Duas acoes nomeadas, nenhum significado trocado por baixo. */
-              <div key={agent.slug} className={`menu__row${isCurrent ? ' is-current' : ''}`}>
-                {/* O disco E o botao de aparencia: o lapis aparece no hover. */}
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="menu__face"
-                  onClick={() => editAgent(agent.slug)}
-                  title={`Aparência de ${agent.name}`}
-                  aria-label={`Aparência de ${agent.name}`}
-                >
-                  <AgentDisc
-                    name={agent.name}
-                    color={colorOf(agent.slug)}
-                    src={avatarOf?.(agent.slug)}
+              <div className="flex items-center gap-2.5 px-3 py-2.5">
+                <span className="flex shrink-0 items-center gap-1" aria-hidden="true">
+                  <AgentAvatar name={change.beforeName} color={change.beforeColor} size={28} />
+                  <ArrowRightIcon className="text-muted-foreground size-3.5" />
+                  <AgentAvatar
+                    name={nameOf(change.slug)}
+                    color={colorOf(change.slug)}
+                    src={avatarOf?.(change.slug)}
                     size={28}
                   />
-                  <span className="menu__pencil" aria-hidden="true">
-                    <PencilIcon />
-                  </span>
-                </button>
-                <span className="menu__who">
-                  <span className="menu__name">{agent.name}</span>
-                  <span className="menu__tag">{isCurrent ? 'no chip' : 'disponível'}</span>
                 </span>
-                <span className="menu__acts">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="menu__act"
-                    onClick={() => writeTo(agent.slug)}
-                    title={`Escrever para ${agent.name}`}
-                    aria-label={`Escrever para ${agent.name}`}
-                  >
-                    <SendIcon />
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="menu__act"
-                    onClick={() => callAgent(agent.slug)}
-                    title={`Ligar para ${agent.name}`}
-                    aria-label={`Ligar para ${agent.name}`}
-                  >
-                    <PhoneIcon />
-                  </button>
+                <span className="flex min-w-0 flex-col items-start gap-0.5">
+                  <span className="text-foreground text-left text-sm leading-tight">
+                    {change.beforeName} {change.what}
+                  </span>
+                  <Eyebrow>pelo próprio workspace</Eyebrow>
                 </span>
               </div>
-            )
-          })}
-        </div>
-      )}
 
-      {/* A FILA DE RECADOS.
-          O balao mostra o mais novo e sai sozinho; aqui fica tudo o que
-          chegou enquanto ninguem estava olhando. Em fluxo, como todo o resto
-          desta coluna — ver o comentario do menu. */}
-      {queueOpen && (
-        <div className="queue" role="dialog" aria-label="Recados dos agentes">
-          <div className="queue__head">
-            <span className="eyebrow">Recados</span>
-            <span className="queue__tools">
+              <Timer
+                key={`${change.slug}:${change.what}`}
+                ms={NOTICE_TIMEOUT_MS}
+                color={colorOf(change.slug)}
+              />
+            </button>
+          </Panel>
+        )}
+
+        {/* A ULTIMA resposta, ou o ultimo erro. Nunca dois: quem manda outra
+            mensagem troca o que esta aqui. */}
+        {reply && (
+          <Panel
+            asChild
+            className={cn(reply.isError && 'border-destructive/40')}
+            style={{ '--agent': colorOf(reply.agentSlug) } as CSSProperties}
+          >
+            <button
+              type="button"
+              onClick={() => onReplyDone?.()}
+              onPointerEnter={() => setReplyHeld(true)}
+              onPointerLeave={() => setReplyHeld(false)}
+              aria-live="polite"
+              title="Fechar"
+            >
+              <div className="flex items-center justify-between gap-2 px-3 pt-2.5">
+                <Eyebrow
+                  className={cn('truncate', reply.isError && 'text-destructive')}
+                  style={reply.isError ? undefined : { color: colorOf(reply.agentSlug) }}
+                >
+                  {reply.isError ? 'não consegui mandar' : nameOf(reply.agentSlug)}
+                </Eyebrow>
+                {reply.echoed ? (
+                  <Badge variant="outline" className="gap-1 text-[0.625rem]">
+                    <CheckIcon className="size-2.5" />
+                    na thread
+                  </Badge>
+                ) : (
+                  <Eyebrow className="shrink-0 whitespace-nowrap">clique para fechar</Eyebrow>
+                )}
+              </div>
+
+              <p className="text-foreground px-3 py-2 text-left text-sm leading-snug whitespace-pre-wrap">
+                {reply.text}
+              </p>
+
+              {/* Erro nao tem relogio: fica ate alguem decidir. */}
+              {!reply.isError && (
+                <Timer
+                  key={`${reply.agentSlug}:${reply.text}`}
+                  ms={REPLY_TIMEOUT_MS}
+                  color={colorOf(reply.agentSlug)}
+                  held={replyHeld}
+                />
+              )}
+            </button>
+          </Panel>
+        )}
+
+        {/* O MENU DOS AGENTES. */}
+        {menuOpen && (
+          <Panel role="menu" aria-label="Agentes">
+            <PanelHead label="Agentes">
+              <Eyebrow className="mr-1">
+                {agents.length === 1 ? '1 na linha' : `${agents.length} na linha`}
+              </Eyebrow>
+
+              {/* A fila de recados. Discreta: so o sininho, com a conta quando
+                  ha coisa nova. Some quando nunca houve recado. */}
               {messages.length > 0 && (
-                <button
-                  type="button"
-                  className="queue__clear"
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      className="relative"
+                      onClick={openQueue}
+                      aria-label={
+                        unread > 0 ? `Recados dos agentes (${unread} novos)` : 'Recados dos agentes'
+                      }
+                    >
+                      <BellIcon />
+                      {unread > 0 && (
+                        <Badge
+                          variant="default"
+                          className="absolute -top-1 -right-1 size-3.5 justify-center rounded-full p-0 text-[0.5rem] tabular-nums"
+                        >
+                          {unread > 9 ? '9+' : unread}
+                        </Badge>
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Recados dos agentes</TooltipContent>
+                </Tooltip>
+              )}
+
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={closeMenu}
+                aria-label="Fechar a lista"
+              >
+                <XIcon />
+              </Button>
+            </PanelHead>
+
+            <Separator />
+
+            <ScrollArea className="max-h-80">
+              <ItemGroup className="p-1">
+                {agents.map((agent) => {
+                  const isCurrent = agent.slug === current.slug
+                  const color = colorOf(agent.slug)
+                  return (
+                    /* A LINHA NAO E CLICAVEL. Escrever vai ser a acao mais
+                       frequente, mas ela nao pode virar o clique padrao: quem
+                       hoje clica na linha esperando LIGAR passaria a errar
+                       todas as vezes. Duas acoes nomeadas, nenhum significado
+                       trocado por baixo. */
+                    <Item
+                      key={agent.slug}
+                      size="sm"
+                      variant={isCurrent ? 'muted' : 'default'}
+                      className="group/agent border-0"
+                    >
+                      <ItemMedia>
+                        {/* O disco E o botao de aparencia: o lapis no hover. */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="focus-visible:ring-ring relative rounded-full focus-visible:ring-2 focus-visible:outline-none"
+                              onClick={() => editAgent(agent.slug)}
+                              aria-label={`Aparência de ${agent.name}`}
+                            >
+                              <AgentAvatar
+                                name={agent.name}
+                                color={color}
+                                src={avatarOf?.(agent.slug)}
+                                size={28}
+                              />
+                              <span
+                                className="bg-background text-foreground absolute -right-0.5 -bottom-0.5 grid size-3.5 place-items-center rounded-full opacity-0 transition-opacity group-hover/agent:opacity-100"
+                                aria-hidden="true"
+                              >
+                                <PencilIcon className="size-2" />
+                              </span>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>Aparência de {agent.name}</TooltipContent>
+                        </Tooltip>
+                      </ItemMedia>
+
+                      <ItemContent className="gap-0">
+                        <ItemTitle>{agent.name}</ItemTitle>
+                        <ItemDescription className="text-xs">
+                          {isCurrent ? 'no chip' : 'disponível'}
+                        </ItemDescription>
+                      </ItemContent>
+
+                      <ItemActions>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              role="menuitem"
+                              onClick={() => writeTo(agent.slug)}
+                              aria-label={`Escrever para ${agent.name}`}
+                            >
+                              <SendIcon />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Escrever</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              role="menuitem"
+                              onClick={() => callAgent(agent.slug)}
+                              aria-label={`Ligar para ${agent.name}`}
+                            >
+                              <PhoneIcon />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Ligar</TooltipContent>
+                        </Tooltip>
+                      </ItemActions>
+                    </Item>
+                  )
+                })}
+              </ItemGroup>
+            </ScrollArea>
+          </Panel>
+        )}
+
+        {/* A FILA DE RECADOS.
+            O balao mostra o mais novo e sai sozinho; aqui fica tudo o que
+            chegou enquanto ninguem estava olhando. */}
+        {queueOpen && (
+          <Panel role="dialog" aria-label="Recados dos agentes">
+            <PanelHead label="Recados">
+              {messages.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="xs"
                   onClick={() => {
                     onClearMessages?.()
                     setQueueOpen(false)
                   }}
                 >
                   Limpar
-                </button>
+                </Button>
               )}
-              <button
-                type="button"
-                className="menu__tool"
+              <Button
+                variant="ghost"
+                size="icon-xs"
                 onClick={() => setQueueOpen(false)}
-                title="Fechar"
                 aria-label="Fechar os recados"
               >
-                <CloseIcon />
-              </button>
-            </span>
-          </div>
+                <XIcon />
+              </Button>
+            </PanelHead>
 
-          {messages.length === 0 ? (
-            <p className="queue__empty">Nenhum recado por enquanto.</p>
-          ) : (
-            <ul className="queue__list">
-              {messages.map((message) => (
-                <li key={message.id} className="queue__item">
-                  <span className="queue__line">
-                    <AgentDisc
-                      name={nameOf(message.agentSlug)}
-                      color={colorOf(message.agentSlug)}
-                      src={avatarOf?.(message.agentSlug)}
-                      size={20}
-                    />
-                    <span className="queue__who">{nameOf(message.agentSlug)}</span>
-                    <span className="queue__at">{formatClock(message.at)}</span>
-                    <button
-                      type="button"
-                      className="menu__tool"
-                      onClick={() => onDismissMessage?.(message.id)}
-                      title="Tirar da fila"
-                      aria-label={`Tirar o recado de ${nameOf(message.agentSlug)} da fila`}
-                    >
-                      <CloseIcon />
-                    </button>
-                  </span>
-                  <span className="queue__text">{message.text}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+            <Separator />
 
-      {agentBeingEdited && (
-        <AgentPanel
-          agent={agentBeingEdited}
-          color={colorOf(agentBeingEdited.slug)}
-          avatar={avatarOf?.(agentBeingEdited.slug) ?? ''}
-          onClose={() => setEditFor('')}
-          onSaving={() => onAgentsSaving?.()}
-          onSaved={(next) => onAgentsUpdated?.(next)}
-        />
-      )}
-
-      {composeFor && compose && (
-        <div
-          className="compose"
-          style={{ '--compose-color': colorOf(composeFor) } as CSSProperties}
-        >
-          <div className="compose__head">
-            <span className="compose__to">
-              Para
-              <AgentDisc
-                name={nameOf(composeFor)}
-                color={colorOf(composeFor)}
-                size={16}
-                src={avatarOf?.(composeFor)}
-              />
-              <b>{nameOf(composeFor)}</b>
-            </span>
-            <span className="compose__tools">
-            {/* O tutorial mora AQUI DENTRO, escondido: as teclas so aparecem
-                para quem for procurar por elas. */}
-            <button
-              type="button"
-              className={`compose__hint${hintOpen ? ' is-open' : ''}`}
-              aria-label="Como mandar"
-              aria-expanded={hintOpen}
-              onPointerEnter={() => setHintOpen(true)}
-              onPointerLeave={() => setHintOpen(false)}
-              onFocus={() => setHintOpen(true)}
-              onBlur={() => setHintOpen(false)}
-            >
-              i
-            </button>
-            {/* Fechar sem precisar saber do Esc. */}
-            <button
-              type="button"
-              className="menu__tool"
-              onClick={() => onCloseCompose?.()}
-              title="Fechar"
-              aria-label="Fechar o campo"
-            >
-              <CloseIcon />
-            </button>
-            </span>
-          </div>
-
-          {/* Uma linha so, e ela esta SEMPRE no layout — ora com o lembrete,
-              ora com o "esta pensando", ora vazia. Se ela entrasse e saisse, a
-              janela (que tem o tamanho do conteudo) pularia a cada passada do
-              mouse pelo `i`. */}
-          <span
-            className={`compose__line${compose.busy || hintOpen ? ' is-open' : ''}${compose.busy ? ' is-busy' : ''}`}
-          >
-            {compose.busy ? (
-              <>
-                <Thinking />
-                {nameOf(composeFor)} está pensando
-              </>
+            {messages.length === 0 ? (
+              <Empty className="py-8">
+                <EmptyHeader>
+                  <EmptyDescription>Nenhum recado por enquanto.</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             ) : (
-              <>
-                <span>
-                  <kbd>Enter</kbd> manda
-                </span>
-                <span>
-                  <kbd>Shift+Enter</kbd> linha
-                </span>
-                <span>
-                  <kbd>Esc</kbd> fecha
-                </span>
-              </>
+              <ScrollArea className="max-h-80">
+                <ItemGroup className="p-1">
+                  {messages.map((message) => (
+                    <Item key={message.id} size="sm" className="items-start border-0">
+                      <ItemMedia className="pt-0.5">
+                        <AgentAvatar
+                          name={nameOf(message.agentSlug)}
+                          color={colorOf(message.agentSlug)}
+                          src={avatarOf?.(message.agentSlug)}
+                          size={20}
+                        />
+                      </ItemMedia>
+                      <ItemContent className="min-w-0 flex-1 gap-0.5">
+                        <ItemTitle className="gap-1.5">
+                          {nameOf(message.agentSlug)}
+                          <span className="text-muted-foreground font-mono text-[0.625rem] font-normal tabular-nums">
+                            {formatClock(message.at)}
+                          </span>
+                        </ItemTitle>
+                        <ItemDescription className="line-clamp-none">
+                          {message.text}
+                        </ItemDescription>
+                      </ItemContent>
+                      <ItemActions className="self-start">
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => onDismissMessage?.(message.id)}
+                          aria-label={`Tirar o recado de ${nameOf(message.agentSlug)} da fila`}
+                        >
+                          <XIcon />
+                        </Button>
+                      </ItemActions>
+                    </Item>
+                  ))}
+                </ItemGroup>
+              </ScrollArea>
             )}
-          </span>
+          </Panel>
+        )}
 
-          <div className="compose__field">
-            <textarea
-              ref={draftRef}
-              className="compose__text"
-              rows={1}
-              value={compose.draft}
-              disabled={compose.busy}
-              placeholder={`Recado para ${nameOf(composeFor)}…`}
-              onChange={(event) => onDraftChange?.(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  event.preventDefault()
-                  onCloseCompose?.()
-                  return
-                }
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault()
-                  if (!compose.busy && compose.draft.trim()) onSendMessage?.()
-                }
-              }}
-            />
-            <button
-              type="button"
-              className="compose__send"
-              disabled={compose.busy || !compose.draft.trim()}
-              onClick={() => onSendMessage?.()}
-              aria-label={`Mandar para ${nameOf(composeFor)}`}
-              title="Mandar"
-            >
-              <SendIcon />
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div
-        className={`chip${open ? ' is-open' : ''}${active ? ' is-active' : ''}`}
-        onPointerEnter={() => setHovered(true)}
-        onPointerLeave={() => setHovered(false)}
-      >
-        {/* Alca de arrastar: so no app de desktop, e so com o chip aceso. */}
-        <span className="chip__grip" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-          <i />
-          <i />
-          <i />
-        </span>
-
-        {/* Parado: tres barrinhas mudas. Na linha: as mesmas tres, vivas. */}
-        <span className={`wave${active ? ' wave--live' : ''}`} aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </span>
-
-        {/* O NOME (e o cronometro) ficam EM FLUXO, dentro do chip.
-            Antes isto era um rotulo absoluto colado embaixo: como a janela do
-            app tem o tamanho do conteudo e ignora filho posicionado fora da
-            caixa, ele nascia fora da janela e aparecia cortado pela metade —
-            a mesma armadilha do menu, em outro canto. */}
-        <span className={`chip__label${open || active ? ' is-open' : ''}`} aria-live="off">
-          {label}
-        </span>
-
-        {/* Tem recado esperando: um ponto, e so. Quem abre a lista ve o
-            sininho com a conta. */}
-        {unread > 0 && !queueOpen && (
-          <span
-            className="chip__new"
-            style={{ background: colorOf(messages[0].agentSlug) } as CSSProperties}
-            aria-hidden="true"
+        {agentBeingEdited && (
+          <AgentPanel
+            agent={agentBeingEdited}
+            color={colorOf(agentBeingEdited.slug)}
+            avatar={avatarOf?.(agentBeingEdited.slug) ?? ''}
+            onClose={() => setEditFor('')}
+            onSaving={() => onAgentsSaving?.()}
+            onSaved={(next) => onAgentsUpdated?.(next)}
           />
         )}
 
-        <span className="chip__reveal">
-          <button
-            type="button"
-            className="chip__avatar"
-            onClick={() => (active ? onHangUp() : callAgent(current.slug))}
-            onFocus={() => setHovered(true)}
-            onBlur={() => setHovered(false)}
-            aria-label={
-              active ? `Desligar a ligacao com ${current.name}` : `Ligar de novo para ${current.name}`
-            }
-          >
-            <AgentDisc
-              name={current.name}
-              color={currentColor}
-              size={32}
-              src={avatarOf?.(current.slug)}
-            />
-          </button>
-          <button
-            type="button"
-            className="chip__chevron"
-            onClick={() => {
-              if (openedByHoverRef.current) {
-                openedByHoverRef.current = false
-                setMenuOpen(true)
-                return
-              }
-              if (menuOpen) closeMenu()
-              else setMenuOpen(true)
-            }}
-            onPointerEnter={() => {
-              // Acabou de fechar no clique: o hover nao reabre (ver closedAtRef).
-              if (Date.now() - closedAtRef.current < REOPEN_GUARD_MS) return
-              openedByHoverRef.current = !menuOpen
-              setMenuOpen(true)
-            }}
-            onPointerLeave={() => {
-              openedByHoverRef.current = false
-            }}
-            onFocus={() => setHovered(true)}
-            onBlur={() => setHovered(false)}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            aria-label="Escolher outro agente"
-          >
-            <ChevronIcon />
-          </button>
-        </span>
+        {/* O CAMPO DE ESCREVER. */}
+        {composeFor && compose && (
+          <Panel style={{ '--agent': colorOf(composeFor) } as CSSProperties}>
+            <div className="flex h-8 items-center justify-between gap-2 px-2.5">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Eyebrow>Para</Eyebrow>
+                <AgentAvatar
+                  name={nameOf(composeFor)}
+                  color={colorOf(composeFor)}
+                  src={avatarOf?.(composeFor)}
+                  size={16}
+                />
+                <span className="truncate text-xs font-semibold">{nameOf(composeFor)}</span>
+              </span>
 
+              <span className="flex items-center gap-0.5">
+                {/* O tutorial mora AQUI DENTRO, escondido: as teclas so
+                    aparecem para quem for procurar por elas. */}
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="rounded-full font-mono"
+                  aria-label="Como mandar"
+                  aria-expanded={hintOpen}
+                  onPointerEnter={() => setHintOpen(true)}
+                  onPointerLeave={() => setHintOpen(false)}
+                  onFocus={() => setHintOpen(true)}
+                  onBlur={() => setHintOpen(false)}
+                >
+                  i
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => onCloseCompose?.()}
+                  aria-label="Fechar o campo"
+                >
+                  <XIcon />
+                </Button>
+              </span>
+            </div>
+
+            {/* Uma linha so, e ela esta SEMPRE no layout — ora com o lembrete,
+                ora com o "esta pensando", ora vazia. Se ela entrasse e saisse,
+                a janela (que tem o tamanho do conteudo) pularia a cada passada
+                do mouse pelo `i`. */}
+            <div
+              className={cn(
+                'flex h-5 items-center gap-2 px-3 transition-opacity',
+                compose.busy || hintOpen ? 'opacity-100' : 'opacity-0',
+              )}
+            >
+              {compose.busy ? (
+                <>
+                  <Spinner className="text-muted-foreground size-3" />
+                  <span className="text-muted-foreground text-xs">
+                    {nameOf(composeFor)} está pensando
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-muted-foreground flex items-center gap-1 text-[0.625rem]">
+                    <Kbd>Enter</Kbd> manda
+                  </span>
+                  <span className="text-muted-foreground flex items-center gap-1 text-[0.625rem]">
+                    <Kbd>Shift+Enter</Kbd> linha
+                  </span>
+                  <span className="text-muted-foreground flex items-center gap-1 text-[0.625rem]">
+                    <Kbd>Esc</Kbd> fecha
+                  </span>
+                </>
+              )}
+            </div>
+
+            <div className="p-2 pt-1">
+              <InputGroup>
+                <InputGroupTextarea
+                  ref={draftRef}
+                  rows={1}
+                  className="max-h-24 text-sm"
+                  value={compose.draft}
+                  disabled={compose.busy}
+                  placeholder={`Recado para ${nameOf(composeFor)}…`}
+                  onChange={(event) => onDraftChange?.(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      onCloseCompose?.()
+                      return
+                    }
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault()
+                      if (!compose.busy && compose.draft.trim()) onSendMessage?.()
+                    }
+                  }}
+                />
+                <InputGroupAddon align="block-end">
+                  <InputGroupButton
+                    size="icon-xs"
+                    className="ml-auto"
+                    style={
+                      compose.busy || !compose.draft.trim()
+                        ? undefined
+                        : ({
+                            background: colorOf(composeFor),
+                            color: 'var(--primary-foreground)',
+                          } as CSSProperties)
+                    }
+                    disabled={compose.busy || !compose.draft.trim()}
+                    onClick={() => onSendMessage?.()}
+                    aria-label={`Mandar para ${nameOf(composeFor)}`}
+                  >
+                    <SendIcon />
+                  </InputGroupButton>
+                </InputGroupAddon>
+              </InputGroup>
+            </div>
+          </Panel>
+        )}
+
+        {/* O CHIP. */}
+        <div
+          className={cn(
+            'app-drag relative flex cursor-move items-center rounded-full border px-2.5 py-1.5 transition-colors',
+            open || active ? 'border-border' : 'border-transparent',
+            open
+              ? 'bg-popover/90 shadow-2xl backdrop-blur-sm'
+              : active
+                ? 'bg-muted/60'
+                : 'bg-transparent',
+          )}
+          style={{ '--agent': currentColor } as CSSProperties}
+        >
+          {/* Alca de arrastar: so aparece com o chip aceso. */}
+          <span
+            className="reveal text-muted-foreground"
+            data-open={open}
+            style={{ '--reveal-w': '0.75rem', '--reveal-gap': '0px' } as CSSProperties}
+            aria-hidden="true"
+          >
+            <GripVerticalIcon className="size-3" />
+          </span>
+
+          {/* Parado: tres barrinhas mudas. Na linha: as mesmas tres, vivas. */}
+          <span className="wave ml-1.5" data-live={active} aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+
+          {/* O NOME (e o cronometro) ficam EM FLUXO, dentro do chip: fora dele,
+              a janela — que tem o tamanho do conteudo — cortava o texto pela
+              metade. */}
+          <span
+            className="reveal-text text-muted-foreground text-xs"
+            data-open={open || active}
+            aria-live="off"
+          >
+            {label}
+          </span>
+
+          {/* Tem recado esperando: um ponto, e so. Quem abre a lista ve o
+              sininho com a conta. */}
+          {unread > 0 && !queueOpen && !open && (
+            <span
+              className="absolute top-0 right-0 size-2 rounded-full"
+              style={{ background: colorOf(messages[0].agentSlug) }}
+              aria-hidden="true"
+            />
+          )}
+
+          <span
+            className="reveal app-no-drag relative flex items-center"
+            data-open={open}
+            style={{ '--reveal-w': '2.375rem' } as CSSProperties}
+          >
+            <button
+              type="button"
+              className="focus-visible:ring-ring rounded-full transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:outline-none"
+              onClick={() => (active ? onHangUp() : callAgent(current.slug))}
+              onFocus={() => setHoverNow(true)}
+              onBlur={() => setHoverNow(false)}
+              aria-label={
+                active
+                  ? `Desligar a ligacao com ${current.name}`
+                  : `Ligar de novo para ${current.name}`
+              }
+            >
+              <AgentAvatar
+                name={current.name}
+                color={currentColor}
+                src={avatarOf?.(current.slug)}
+                size={32}
+              />
+            </button>
+
+            <Button
+              variant="secondary"
+              size="icon-xs"
+              className="absolute -top-1 right-0 size-4 rounded-full border"
+              onClick={() => {
+                window.clearTimeout(menuTimerRef.current)
+                if (openedByHoverRef.current) {
+                  openedByHoverRef.current = false
+                  setMenuOpen(true)
+                  return
+                }
+                if (menuOpen) closeMenu()
+                else setMenuOpen(true)
+              }}
+              onPointerEnter={() => {
+                // Acabou de fechar no clique: o hover nao reabre.
+                if (Date.now() - closedAtRef.current < REOPEN_GUARD_MS) return
+                if (menuOpen) return
+                window.clearTimeout(menuTimerRef.current)
+                // A lista so abre se o mouse REALMENTE parar no chevron.
+                menuTimerRef.current = window.setTimeout(() => {
+                  openedByHoverRef.current = true
+                  setMenuOpen(true)
+                }, MENU_OPEN_MS)
+              }}
+              onPointerLeave={() => {
+                window.clearTimeout(menuTimerRef.current)
+                openedByHoverRef.current = false
+              }}
+              onFocus={() => setHoverNow(true)}
+              onBlur={() => setHoverNow(false)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label="Escolher outro agente"
+            >
+              <ChevronDownIcon className="size-2.5" />
+            </Button>
+          </span>
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }

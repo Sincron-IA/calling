@@ -8,9 +8,27 @@
  * O caminho e o mesmo da primeira vez (endereco + chave + login do Cloudflare);
  * ao terminar, o painel se fecha e a janela da barra recarrega sozinha — quem
  * faz isso e o processo principal, ao salvar.
+ *
+ * As SAIDAS do painel tem peso diferente entre si, e agora o desenho diz isso:
+ * "Abrir a barra" e um atalho comum, "Sair do Calling" encerra o app e por isso
+ * pergunta antes. Antes os dois eram o mesmo botao de texto, lado a lado.
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { PanelTopOpenIcon, PowerIcon } from 'lucide-react'
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
 import { ConnectScreen, ConnectingCard, type ConnectPhase } from './ConnectScreen'
 import { fetchAgents } from './bridge'
 import { DEFAULT_BRIDGE_URL, setConfig } from './config'
@@ -69,10 +87,15 @@ export function ConfigPanel() {
     }
   }, [api])
 
-  // A janela acompanha a altura do cartao: sem sobra embaixo quando o texto e
-  // curto, sem recado escondido atras da borda quando ele cresce.
+  /*
+   * A janela acompanha a altura do conteudo.
+   *
+   * O alvo e o PRIMEIRO filho do `#root` (o cartao do painel), e nao uma classe
+   * do CSS antigo: assim a medida continua certa enquanto a migracao troca o
+   * que ha dentro dele.
+   */
   useEffect(() => {
-    const card = document.querySelector('.connect__card')
+    const card = document.getElementById('root')?.firstElementChild
     if (!card) return
     const report = () => void api.resizeConfigPanel(Math.ceil(card.getBoundingClientRect().height))
     report()
@@ -135,6 +158,20 @@ export function ConfigPanel() {
     [api, close],
   )
 
+  /*
+   * Desconectar: esquece endereco, chave e a sessao do Cloudflare.
+   *
+   * O `clearConfig` ja existia na ponte com o Electron e nunca tinha sido
+   * chamado por ninguem — nao havia como desfazer uma conexao pela interface.
+   */
+  const forget = useCallback(async () => {
+    await api.clearConfig().catch(() => undefined)
+    setSaved({ bridgeUrl: DEFAULT_BRIDGE_URL, sharedSecret: '' })
+    setStatus('sem chave')
+    setPhase('form')
+    setError('')
+  }, [api])
+
   if (!loaded) return <ConnectingCard label="Abrindo…" compact />
 
   return (
@@ -151,16 +188,39 @@ export function ConfigPanel() {
       connected={status === 'conectado'}
       compact
       onConnect={(url, secret) => void connect(url, secret)}
+      onForget={saved.sharedSecret ? () => void forget() : undefined}
       onCancel={close}
       cancelLabel="Fechar"
       footer={
         <>
-          <button type="button" className="connect__link" onClick={() => void api.showMainWindow()}>
+          <Button variant="ghost" size="sm" type="button" onClick={() => void api.showMainWindow()}>
+            <PanelTopOpenIcon data-icon="inline-start" />
             Abrir a barra
-          </button>
-          <button type="button" className="connect__link" onClick={() => void api.quit()}>
-            Sair do Calling
-          </button>
+          </Button>
+
+          {/* Encerrar o app e a unica acao daqui que nao da para desfazer:
+              ela pergunta antes, e nao divide o peso visual com o atalho ao
+              lado. */}
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon-sm" type="button" aria-label="Sair do Calling">
+                <PowerIcon />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Sair do Calling?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  A barra fecha e os agentes deixam de conseguir chamar você por aqui. Os toques
+                  continuam caindo no Telegram, como sempre.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Ficar</AlertDialogCancel>
+                <AlertDialogAction onClick={() => void api.quit()}>Sair</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </>
       }
     />

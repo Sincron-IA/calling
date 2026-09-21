@@ -27,10 +27,22 @@ import { fetchAgents } from './bridge'
 import { DEFAULT_BRIDGE_URL, setConfig } from './config'
 import { resetIncomingStream } from './incoming'
 import { desktop } from './desktop'
+import { SettingsIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 type Phase = 'boot' | ConnectPhase
 
 const GENERIC_ERROR = 'Não consegui falar com o bridge. Confira o endereço e a chave.'
+
+/**
+ * Quanto tempo o conteudo precisa ficar parado antes de a janela encolher.
+ *
+ * Um pouco acima da transicao mais longa do CSS (240ms, o chip abrindo), para
+ * que a janela so acompanhe o tamanho FINAL — nunca um quadro do meio.
+ */
+const SETTLE_MS = 280
 
 export function DesktopGate() {
   const api = desktop!
@@ -106,19 +118,69 @@ export function DesktopGate() {
     const root = document.getElementById('root')
     if (!root) return
 
-    const report = () => {
-      const rect = root.getBoundingClientRect()
-      if (rect.width < 1 || rect.height < 1) return
-      void api.resizeMainWindow({
-        width: Math.ceil(rect.width),
-        height: Math.ceil(rect.height),
-      })
+    let frame = 0
+    let shrinkTimer = 0
+    let applied = { width: 0, height: 0 }
+
+    const send = (width: number, height: number) => {
+      applied = { width, height }
+      void api.resizeMainWindow({ width, height })
     }
 
-    report()
-    const observer = new ResizeObserver(report)
+    /*
+     * Crescer e imediato; encolher espera a animacao terminar.
+     *
+     * O chip cresce e encolhe em 240ms de transicao CSS, e o observador dispara
+     * a cada quadro dela. Mandando todos, a janela encolhia DEBAIXO do cursor no
+     * meio do fechamento: o ponto onde o mouse estava saia da janela, o chip
+     * recebia um `pointerleave`, e o proximo quadro devolvia um `pointerenter`
+     * — a barra piscava aberta/fechada sem parar.
+     *
+     * Uma janela maior que o conteudo nao aparece (ela e transparente), entao
+     * segurar o encolhimento por um instante nao custa nada visualmente.
+     */
+    const read = () => {
+      const rect = root.getBoundingClientRect()
+      return { width: Math.ceil(rect.width), height: Math.ceil(rect.height) }
+    }
+
+    /** Passado o tempo de calmaria, a janela veste o tamanho que sobrou. */
+    const settle = () => {
+      const { width, height } = read()
+      if (width < 1 || height < 1) return
+      if (width === applied.width && height === applied.height) return
+      send(width, height)
+    }
+
+    const measure = () => {
+      frame = 0
+      const { width, height } = read()
+      if (width < 1 || height < 1) return
+
+      window.clearTimeout(shrinkTimer)
+      // Encolher (ou um crescimento que ainda esta a caminho) espera a calmaria.
+      shrinkTimer = window.setTimeout(settle, SETTLE_MS)
+
+      // Crescer nao espera: o conteudo novo nao pode aparecer cortado.
+      if (width > applied.width || height > applied.height) {
+        send(Math.max(width, applied.width), Math.max(height, applied.height))
+      }
+    }
+
+    // Um quadro por vez: o observador dispara varias vezes dentro do mesmo.
+    const schedule = () => {
+      if (frame) return
+      frame = window.requestAnimationFrame(measure)
+    }
+
+    measure()
+    const observer = new ResizeObserver(schedule)
     observer.observe(root)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(shrinkTimer)
+    }
   }, [api])
 
   /* ------------------------------------ a engrenagem ao lado ou embaixo --- */
@@ -254,20 +316,40 @@ export function DesktopGate() {
    * baixo da barra em vez de ficar espremida contra o canto da tela.
    */
   return (
-    <div className={`shell${rightEdge ? ' shell--stacked' : ''}`}>
-      <App key={session} readyNotice={readyNotice} />
-
-      <button
-        ref={gearRef}
-        className="gear"
-        type="button"
-        title="Conexão"
-        aria-label="Conexão"
-        onClick={openConfigPanel}
+    <TooltipProvider delayDuration={300}>
+      <div
+        className={cn(
+          'group/shell flex',
+          // Colada na borda direita: a engrenagem desce para baixo da barra em
+          // vez de ficar espremida contra o canto da tela.
+          rightEdge ? 'flex-col items-end gap-1.5' : 'flex-row items-end gap-1.5',
+        )}
       >
-        <GearIcon />
-      </button>
-    </div>
+        {rightEdge && <App key={session} readyNotice={readyNotice} />}
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              ref={gearRef}
+              variant="ghost"
+              size="icon-sm"
+              type="button"
+              aria-label="Conexão"
+              onClick={openConfigPanel}
+              className={cn(
+                'app-no-drag mb-1.5 rounded-full opacity-0 transition-opacity',
+                'group-hover/shell:opacity-100 group-focus-within/shell:opacity-100 focus-visible:opacity-100',
+              )}
+            >
+              <SettingsIcon />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side={rightEdge ? 'left' : 'top'}>Conexão</TooltipContent>
+        </Tooltip>
+
+        {!rightEdge && <App key={session} readyNotice={readyNotice} />}
+      </div>
+    </TooltipProvider>
   )
 }
 
@@ -282,17 +364,3 @@ function readyMessage(count: number): string {
   return 'Conectado · pronto para conversar'
 }
 
-function GearIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
-      />
-    </svg>
-  )
-}

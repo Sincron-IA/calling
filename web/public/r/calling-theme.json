@@ -1,0 +1,68 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "calling-theme",
+  "title": "Tema do Calling",
+  "description": "Os tokens escuros do Calling e as tres coisas que nenhum registro entrega: o filete de tempo, a onda do audio e o chip que se abre no hover.",
+  "cssVars": {
+    "theme": {
+      "font-mono": "'Geist Mono', ui-monospace, 'Cascadia Mono', monospace"
+    },
+    "dark": {
+      "background": "#0b0d10",
+      "foreground": "#e9edf2",
+      "card": "#14181d",
+      "card-foreground": "#e9edf2",
+      "popover": "#14181d",
+      "popover-foreground": "#e9edf2",
+      "primary": "#e9edf2",
+      "primary-foreground": "#0b0d10",
+      "secondary": "#1b2027",
+      "secondary-foreground": "#c7cdd6",
+      "muted": "#1b2027",
+      "muted-foreground": "#8b95a3",
+      "accent": "#1e242c",
+      "accent-foreground": "#e9edf2",
+      "destructive": "#f87171",
+      "border": "#242b33",
+      "input": "#242b33",
+      "ring": "#3a444f",
+      "radius": "0.875rem",
+      "ok": "#4ade80"
+    }
+  },
+  "css": {
+    "@utility timer-track": {
+      "display": "block",
+      "height": "2px",
+      "overflow": "hidden",
+      "background": "color-mix(in oklch, var(--foreground), transparent 94%)"
+    },
+    "@utility timer-fill": {
+      "display": "block",
+      "height": "100%",
+      "background": "var(--timer-color, var(--ok))",
+      "transform-origin": "left center",
+      "animation": "calling-timer var(--timer-ms, 5000ms) linear forwards"
+    },
+    "@utility timer-held": {
+      "& > *": {
+        "animation-play-state": "paused"
+      }
+    },
+    "@keyframes calling-timer": {
+      "from": {
+        "transform": "scaleX(1)"
+      },
+      "to": {
+        "transform": "scaleX(0)"
+      }
+    },
+    "@utility app-drag": {
+      "-webkit-app-region": "drag"
+    },
+    "@utility app-no-drag": {
+      "-webkit-app-region": "no-drag"
+    }
+  },
+  "type": "registry:theme"
+}

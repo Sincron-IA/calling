@@ -1,3 +1,7 @@
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Spinner } from '@/components/ui/spinner'
+import { cn } from '@/lib/utils'
+import { isDesktopMainWindow } from './desktop'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GeminiLiveOrbAdapter } from 'orb-ui/adapters'
 import {
@@ -408,22 +412,50 @@ export function App({ readyNotice = '' }: AppProps) {
   )
 
   return (
-    <main className="desk">
-      <header className="desk__head">
-        <h1 className="desk__title">Calling</h1>
-        <p className="desk__subtitle">
-          Os agentes da Sincron ficam a um toque — e ligam de volta quando trava.
-        </p>
-      </header>
+    /* No navegador isto e uma PAGINA: a barra se ancora no canto de baixo a
+       direita da viewport. Na janela do app nao ha pagina — a janela tem o
+       tamanho do conteudo, e quem ancora e o Electron. E a unica diferenca. */
+    <main
+      className={cn(
+        'flex flex-col',
+        isDesktopMainWindow
+          ? 'items-end gap-2'
+          : 'bg-background min-h-svh items-center justify-center gap-6 p-6',
+      )}
+    >
+      {!isDesktopMainWindow && (
+        <header className="flex flex-col items-center gap-1.5 text-center">
+          <h1 className="text-xl font-semibold tracking-tight">Calling</h1>
+          <p className="text-muted-foreground max-w-sm text-sm">
+            Os agentes da Sincron ficam a um toque — e ligam de volta quando trava.
+          </p>
+        </header>
+      )}
 
       {/* O trabalho acontece em silencio: a barra e a unica coisa que fala. */}
-      <section className="desk__log" aria-live="polite">
-        {agents.length === 0 && !error && <p className="desk__note">Carregando agentes…</p>}
-        {phase === 'in-call' && waiting && (
-          <p className="desk__note">{currentName} está pensando…</p>
+      <section className="flex w-full max-w-65 flex-col items-stretch gap-2" aria-live="polite">
+        {agents.length === 0 && !error && (
+          <p className="text-muted-foreground flex items-center justify-center gap-2 text-sm">
+            <Spinner className="size-3.5" />
+            Carregando agentes…
+          </p>
         )}
-        {lastReply && <blockquote className="desk__reply">{lastReply}</blockquote>}
-        {error && <p className="desk__error">{error}</p>}
+        {phase === 'in-call' && waiting && (
+          <p className="text-muted-foreground flex items-center justify-center gap-2 text-sm">
+            <Spinner className="size-3.5" />
+            {currentName} está pensando…
+          </p>
+        )}
+        {lastReply && (
+          <blockquote className="bg-card text-card-foreground rounded-xl border p-3 text-sm leading-snug">
+            {lastReply}
+          </blockquote>
+        )}
+        {error && (
+          <Alert variant="destructive" role="alert">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
       </section>
 
       <CallingBar

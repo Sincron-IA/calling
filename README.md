@@ -28,12 +28,47 @@ voz  ->  Gemini Live (escuta, transcreve, detecta turno)
 ## Estrutura
 
 ```text
-web/        app Vite + React + TypeScript (orb-ui, tema "bars") — vai pra Vercel
+web/        app Vite + React + TypeScript + shadcn/ui — vai pra Vercel
 server/     bridge Node + Express — roda NA VPS, junto dos agentes
 electron/   wrapper fino de desktop: so abre uma janela com o app web
 agents.json quais agentes o Calling conhece (nome, workspace, cor) — sem segredo
-docs/       AGENT-BRIDGE.md + padrao Sincron em docs/sincron/
+docs/       AGENT-BRIDGE.md, SHADCN.md + padrao Sincron em docs/sincron/
 ```
+
+## A interface
+
+Tudo o que se ve e componente pronto do shadcn/ui: `Item`, `Empty`,
+`InputGroup`, `ScrollArea`, `Field`, `Badge`, `Avatar`, `ToggleGroup`,
+`AlertDialog`. Sobraram oito utilidades de CSS, e cada uma tem um motivo que
+nao e preguica — o filete de tempo que pausa no hover, as tres barrinhas do
+audio, o chip que se abre e o `-webkit-app-region` do Electron.
+
+O porque de nada aqui usar `Popover`, `Sheet` ou `sonner` (a janela tem o
+tamanho do conteudo, e portal + `position: absolute` a quebram) esta em
+[`docs/SHADCN.md`](docs/SHADCN.md), junto do placar medido.
+
+### Conferir o desenho sem subir o Electron
+
+A barra e os paineis so existem dentro do app de desktop. A bancada poe todos os
+estados lado a lado, com dados de mentira:
+
+```bash
+npm run dev --workspace=web
+```
+
+Depois abra `http://localhost:5173/?preview=panels`. So existe em
+desenvolvimento.
+
+### Distribuir
+
+O repositorio publica um registro shadcn proprio:
+
+```bash
+npx shadcn@latest add https://calling.sincronia.digital/r/calling-bar.json
+```
+
+Os itens estao em `web/registry.json`. `npm run build` ja gera os JSONs em
+`web/dist/r/`; para gerar so o registro, `npm run registry --workspace=web`.
 
 ## Rodando local
 
