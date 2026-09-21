@@ -114,6 +114,45 @@ quem esta ligando pelo segredo apresentado. Nao da para um agente se passar por
 outro. O `CALLING_SHARED_SECRET` continua sendo outra coisa: e o do app no
 browser.
 
+## Quando o agente so quer FALAR (recado empurrado)
+
+Nem tudo merece um toque. Quando o agente so tem algo a dizer — e nao uma
+decisao a pedir — ele empurra um recado que aparece no app e sai sozinho, sem
+botao e sem ninguem ficar pendurado:
+
+```bash
+curl -X POST http://127.0.0.1:8787/api/agents/automa/notify \
+  -H "authorization: Bearer $CALLING_SHARED_SECRET" \
+  -H "content-type: application/json" \
+  -d '{"text":"Deploy terminou: verde. Nao precisa fazer nada."}'
+{"ok":true,"listeners":1}
+```
+
+`listeners` e quantas telas estavam abertas para ouvir. **Zero nao e erro** — e o
+app fechado; o recado simplesmente nao alcancou ninguem, e quem chamou precisa
+saber disso pela resposta, nao pelo log. Teto de 2000 caracteres.
+
+Repare no segredo: aqui e o `CALLING_SHARED_SECRET` (o do app), e nao o
+`CALLING_RING_TOKEN_<SLUG>` do toque — quem usa esta rota ja esta dentro da VPS,
+com o `.env` na mao.
+
+## Quando o dono fala pelo Calling, a sessao VIVA fica sabendo
+
+Para os agentes listados em `CALLING_WAKE_AGENTS` (hoje so `automa`), um recado
+ou uma ligacao pelo Calling **acorda a sessao viva** do agente — a mesma que
+atende o Telegram — com o mesmo mecanismo dos agendamentos do DG Claw
+(`inject_session`). Recado escrito acorda na hora; ligacao de voz acorda uma vez
+so, no fim, com os turnos em ordem. Sessao ocupada adia e tentamos de novo (3 ×
+30 s).
+
+Junto disso, e so para esses agentes, cada troca vira uma linha NDJSON em
+`<workspace>/calling-log/<AAAA-MM-DD>.ndjson` (0700/0600). Esse e o log de
+**conteudo**, autorizado pelo dono, e e separado do log de **operacao** em
+`/var/log/calling-bridge/`, que nunca viu — e nao vai ver — conversa.
+
+Agente fora da lista: nada disso roda, e o comportamento e exatamente o de
+antes.
+
 ### Colocar um agente novo no Calling
 
 Sem tocar em codigo — sao dois passos:

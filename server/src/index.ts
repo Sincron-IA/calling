@@ -19,19 +19,29 @@ import {
   requireAgentToken,
   requireSecret,
 } from './auth.js'
-import { askAgent, endCall, sendText } from './claude.js'
+import { askAgent, drainCallTurns, endCall, sendText } from './claude.js'
 import { createLiveToken } from './gemini.js'
 import { completeEcho, echoToThread } from './telegram.js'
 import {
   attachStream,
   finish,
   listPending,
+  notifyAgentMessage,
   notifyAgentsChanged,
   ring,
   RING_TIMEOUT_MS,
   streamCount,
   type RingOutcome,
 } from './ring.js'
+import {
+  appendContentLog,
+  callPrompt,
+  messagePrompt,
+  wakeAgents,
+  wakeLiveSession,
+  wakesLiveSession,
+  type CallTurn,
+} from './wake.js'
 
 const PORT = Number(process.env.PORT || 8787)
 
@@ -235,6 +245,61 @@ app.put('/api/agents/:slug/identity', requireSecret, (req, res) => {
   res.json({ agents: publicAgentList() })
 })
 
+/** Teto de um recado empurrado pelo agente. Acima disso nao e aviso, e texto. */
+const NOTIFY_MAX_LENGTH = 2000
+
+/**
+ * O AGENTE EMPURRA UM RECADO PARA DENTRO DO APP.
+ *
+ * Quem chama isto e a sessao VIVA do agente (a mesma do Telegram), depois de
+ * ter sido acordada — ou por conta propria, quando ela tem algo a dizer e o
+ * dono nao perguntou nada. E a outra metade da "segunda janela": ate aqui o
+ * Calling so sabia responder.
+ *
+ * Nao e o `/api/ring`: aquele TOCA e fica pendurado esperando uma decisao. Este
+ * so fala e vai embora — um recado na tela, sem botao e sem resposta.
+ *
+ * Protegido pelo MESMO segredo do app (nao pela credencial de toque): quem usa
+ * esta rota ja esta dentro da maquina, com o `.env` na mao.
+ *
+ * E NUNCA acorda ninguem. Se acordasse, um recado empurrado pela sessao viva
+ * voltaria para ela mesma, e o ciclo nao teria fim.
+ */
+app.post('/api/agents/:slug/notify', requireSecret, (req, res) => {
+  const slug = String(req.params.slug || '')
+  const agent = findAgent(slug)
+  if (!agent) {
+    res.status(400).json({ error: 'Agente desconhecido.' })
+    return
+  }
+
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : ''
+  if (!text) {
+    res.status(400).json({ error: 'Informe "text": o recado que vai aparecer no app.' })
+    return
+  }
+  if (text.length > NOTIFY_MAX_LENGTH) {
+    res
+      .status(400)
+      .json({ error: `Recado longo demais (limite de ${NOTIFY_MAX_LENGTH} caracteres).` })
+    return
+  }
+
+  notifyAgentMessage(agent.slug, text)
+
+  // O TEXTO NAO ENTRA NO LOG DE OPERACAO — so o fato e quantas telas ouviram.
+  // (Zero telas nao e erro: e o app fechado. O recado simplesmente nao alcanca
+  // ninguem, e quem chamou precisa saber disso pela resposta, nao pelo log.)
+  logEvent(
+    'info',
+    'agent_notified',
+    { agent: agent.slug, listeners: streamCount(), chars: text.length },
+    `${agent.slug} empurrou um recado para o Calling (${streamCount()} tela(s) ouvindo)`,
+  )
+
+  res.json({ ok: true, listeners: streamCount() })
+})
+
 app.post('/api/gemini-live-token', requireSecret, async (req, res) => {
   const slug = String(req.body?.agent || '')
   const agent = findAgent(slug)
@@ -270,6 +335,46 @@ app.post('/api/gemini-live-token', requireSecret, async (req, res) => {
     res.status(status).json({ error: 'Nao consegui iniciar a ligacao.' })
   }
 })
+
+/* ====================================================================== */
+/*  A SEGUNDA JANELA — o Calling entra na conversa viva do agente         */
+/* ====================================================================== */
+
+/**
+ * Grava a troca no log de conteudo do agente e ACORDA a sessao viva dele.
+ *
+ * Duas coisas que so acontecem para quem esta em `CALLING_WAKE_AGENTS`. Para
+ * todo o resto (hoje: os outros cinco agentes) esta funcao e um `return` e nada
+ * muda em relacao ao que o Calling sempre fez.
+ *
+ * Chamada SEMPRE depois de o app ja ter a resposta na mao, e sempre sem
+ * `await`: acordar a sessao viva e consequencia do recado, nao pre-requisito
+ * dele. Erro aqui vira log e para ali.
+ */
+function handOverToLiveSession(
+  slug: string,
+  tag: string,
+  prompt: string,
+  record: Parameters<typeof appendContentLog>[1],
+): void {
+  if (!wakesLiveSession(slug)) return
+
+  const agent = findAgent(slug)
+  if (!agent) return
+
+  // O conteudo primeiro: o rastro em disco nao pode depender de a sessao viva
+  // estar de pe. Sessao desligada ainda assim deixa o dia gravado.
+  appendContentLog(agent, record)
+
+  void wakeLiveSession(agent, tag, prompt).catch((err: Error) => {
+    logEvent(
+      'warn',
+      'wake_failed',
+      { agent: slug, tag, error: err.message },
+      `nao consegui acordar a sessao viva de ${slug}: ${err.message}`,
+    )
+  })
+}
 
 /**
  * Implementacao da tool ask_agent.
@@ -343,6 +448,13 @@ app.post('/api/message', requireSecret, async (req, res) => {
     // Acabamento da thread, DEPOIS de o dono ja ter a resposta na tela: a
     // mesma mensagem do pedido ganha a resposta embaixo.
     void completeEcho(agent, mark, text, result.reply)
+
+    // E a sessao VIVA do agente fica sabendo que essa conversa aconteceu.
+    handOverToLiveSession(agent, 'calling-msg', messagePrompt(agent, text, result.reply), {
+      kind: 'message',
+      text,
+      reply: result.reply,
+    })
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500
     logEvent(
@@ -356,13 +468,45 @@ app.post('/api/message', requireSecret, async (req, res) => {
     // A thread nao pode ficar com um "respondendo…" eterno quando o agente
     // falha: a mensagem fecha sem resposta.
     void echo.then((mark) => completeEcho(agent, mark, text, ''))
+
+    // O dono FALOU, mesmo que a resposta tenha morrido no caminho — e isso e
+    // justamente quando a sessao viva mais precisa saber: ela pode ir atras.
+    handOverToLiveSession(agent, 'calling-msg', messagePrompt(agent, text, ''), {
+      kind: 'message',
+      text,
+      reply: '',
+    })
   }
 })
 
+/**
+ * A ligacao de voz acabou de verdade.
+ *
+ * Um turno de voz sozinho nao acorda ninguem — seria cutucar a sessao viva a
+ * cada frase de uma conversa em andamento. O ponto certo e AQUI: a ligacao
+ * inteira vira UM recado, com os turnos em ordem.
+ *
+ * `drainCallTurns` vem ANTES de `endCall`, que e quem joga as sessoes fora.
+ */
 app.post('/api/end-call', requireSecret, (req, res) => {
   const callId = String(req.body?.callId || '')
-  if (callId) endCall(callId)
+
+  let transcripts: { agentSlug: string; turns: CallTurn[] }[] = []
+  if (callId) {
+    transcripts = drainCallTurns(callId)
+    endCall(callId)
+  }
+
   res.json({ ok: true })
+
+  for (const transcript of transcripts) {
+    handOverToLiveSession(
+      transcript.agentSlug,
+      'calling-call',
+      callPrompt(transcript.agentSlug, transcript.turns),
+      { kind: 'call', callId, turns: transcript.turns },
+    )
+  }
 })
 
 /* ====================================================================== */
@@ -561,6 +705,7 @@ app.listen(PORT, HOST, () => {
       port: PORT,
       agents: publicAgentList().map((a) => a.slug),
       ringers,
+      wakeAgents: wakeAgents(),
       ringTimeoutMs: RING_TIMEOUT_MS,
       allowedOrigins: allowlist.effective,
       configuredOrigins: allowlist.configured,
@@ -576,6 +721,12 @@ app.listen(PORT, HOST, () => {
       : '[calling] nenhum agente com credencial de toque — /api/ring desativado.',
   )
   console.log(`[calling] toque expira em ${RING_TIMEOUT_MS}ms`)
+  const waking = wakeAgents()
+  console.log(
+    waking.length > 0
+      ? `[calling] acordam a sessao viva (+ log de conteudo): ${waking.join(', ')}`
+      : '[calling] nenhum agente acorda a sessao viva — CALLING_WAKE_AGENTS vazio.',
+  )
   console.log(`[calling] origens liberadas: ${allowlist.effective.join(', ')}`)
   console.log(`[calling] log em ${logDestination} (NDJSON, 5 arquivos x 5MB)`)
 })

@@ -22,6 +22,7 @@ import {
   approveIncoming,
   declineIncoming,
   dismissIncoming,
+  subscribeAgentMessages,
   subscribeAgentsChanged,
   subscribeIncomingCalls,
   type DeclineCause,
@@ -171,6 +172,15 @@ export function App({ readyNotice = '' }: AppProps) {
   // Chamadas recebidas (um agente ligando para o Luiz): chegam do bridge por
   // SSE. A fila da tela e sempre a que o servidor manda.
   useEffect(() => subscribeIncomingCalls(setIncoming), [])
+
+  /* O agente falou primeiro: recado empurrado pela sessao viva dele, sem que o
+     Luiz tenha escrito nada. Cai no MESMO balao da resposta — e a mesma coisa
+     (o agente dizendo algo), e um balao so evita duas coisas disputando o
+     espaco acima da barra. Ele sai sozinho, como toda resposta. */
+  useEffect(
+    () => subscribeAgentMessages((message) => setReply({ agentSlug: message.agent, text: message.text })),
+    [],
+  )
 
   useEffect(() => {
     agentsRef.current = agents

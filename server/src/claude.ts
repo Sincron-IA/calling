@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { findAgent, type AgentEntry } from './agents.js'
 import { buildTextIdentity, buildVoiceIdentity } from './identity.js'
+import { wakesLiveSession, type CallTurn } from './wake.js'
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || '/home/massari/.local/bin/claude'
 const MODEL = process.env.CALLING_AGENT_MODEL || 'sonnet'
@@ -30,7 +31,22 @@ interface CallSession {
   /** Fila: impede dois --resume simultaneos na mesma sessao. */
   chain: Promise<unknown>
   lastUsed: number
+  /**
+   * Os turnos da LIGACAO, guardados so para agentes que acordam a sessao viva
+   * (`CALLING_WAKE_AGENTS`). Voz nao acorda a cada turno — isso viraria barulho
+   * no meio de uma conversa. A ligacao inteira vira UM recado no fim, e e aqui
+   * que ela se acumula ate la. Sem opt-in este campo nunca nasce, e o custo de
+   * memoria dos outros agentes continua zero.
+   */
+  turns?: CallTurn[]
 }
+
+/**
+ * Teto de turnos guardados por ligacao. Uma conversa de voz que passe disso ja
+ * nao cabe num recado curto para a sessao viva, e a memoria nao pode crescer
+ * sem freio por causa de uma ligacao esquecida.
+ */
+const MAX_RECORDED_TURNS = 60
 
 const sessions = new Map<string, CallSession>()
 
@@ -83,6 +99,32 @@ export function endCall(callId: string) {
   for (const key of sessions.keys()) {
     if (key.startsWith(`${callId}:`)) sessions.delete(key)
   }
+}
+
+/** O que se falou numa ligacao, por agente. */
+export interface CallTranscript {
+  agentSlug: string
+  turns: CallTurn[]
+}
+
+/**
+ * Recolhe os turnos guardados de uma ligacao, ANTES de `endCall` jogar as
+ * sessoes fora.
+ *
+ * Funcao separada de proposito: `endCall` continua sendo "descarta a sessao" e
+ * nada mais. Quem quer o transcrito pede por ele.
+ */
+export function drainCallTurns(callId: string): CallTranscript[] {
+  if (!callId || callId === TEXT_SCOPE) return []
+
+  const transcripts: CallTranscript[] = []
+  for (const [key, session] of sessions) {
+    if (!key.startsWith(`${callId}:`)) continue
+    if (!session.turns || session.turns.length === 0) continue
+    transcripts.push({ agentSlug: key.slice(callId.length + 1), turns: session.turns })
+    session.turns = undefined
+  }
+  return transcripts
 }
 
 /** Limpeza preguicosa: cada escopo com o seu prazo. */
@@ -138,7 +180,20 @@ export async function askAgent(input: AskAgentInput): Promise<AskAgentResult> {
   const session = getSession(input.callId, agent.slug)
 
   // Enfileira: um turno por vez por ligacao/agente.
-  const run = session.chain.then(() => runClaude(agent, session, message, 'voice'))
+  const run = session.chain.then(async () => {
+    const result = await runClaude(agent, session, message, 'voice')
+
+    // A ligacao inteira e que vira recado para a sessao viva, no `end-call`.
+    // Aqui so se anota o turno — e so para quem esta na lista de opt-in.
+    if (wakesLiveSession(agent.slug)) {
+      if (!session.turns) session.turns = []
+      if (session.turns.length < MAX_RECORDED_TURNS) {
+        session.turns.push({ q: message, a: result.reply })
+      }
+    }
+
+    return result
+  })
   session.chain = run.catch(() => undefined)
   return run
 }

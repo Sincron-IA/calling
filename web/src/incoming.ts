@@ -79,6 +79,33 @@ let source: EventSource | null = null
 const agentsListeners = new Set<() => void>()
 
 /**
+ * Um recado que o AGENTE empurrou, sem ninguem ter perguntado nada.
+ *
+ * Vem de `POST /api/agents/:slug/notify` no bridge, pelo mesmo fluxo SSE das
+ * chamadas. E o contrario do resto do app: aqui quem fala primeiro e ele.
+ */
+export interface AgentMessage {
+  /** Slug do agente que mandou. */
+  agent: string
+  /** O texto, como ele escreveu. A UI trata como opaco. */
+  text: string
+  /** Quando o bridge empurrou (ms). */
+  at: number
+}
+
+type AgentMessageListener = (message: AgentMessage) => void
+
+const agentMessageListeners = new Set<AgentMessageListener>()
+
+/** Assina os recados empurrados pelos agentes. Devolve o "parar de ouvir". */
+export function subscribeAgentMessages(listener: AgentMessageListener): () => void {
+  agentMessageListeners.add(listener)
+  return () => {
+    agentMessageListeners.delete(listener)
+  }
+}
+
+/**
  * Avisa quando a cara de algum agente muda — do painel daqui ou do agente na
  * VPS. Devolve a funcao de parar de ouvir.
  */
@@ -125,6 +152,18 @@ function ensureStream(): void {
      mesmo fluxo das chamadas: um cano so. */
   es.addEventListener('agents', () => {
     agentsListeners.forEach((listener) => listener())
+  })
+
+  /* O agente falou primeiro. Mesmo cano, tipo de evento novo — como o
+     `agents`. Nada aqui bloqueia a tela: e um recado que aparece e sai. */
+  es.addEventListener('agent_message', (event) => {
+    try {
+      const data = JSON.parse((event as MessageEvent).data) as AgentMessage
+      if (!data?.text) return
+      agentMessageListeners.forEach((listener) => listener(data))
+    } catch {
+      // Evento malformado nao derruba o fluxo das chamadas.
+    }
   })
 
   es.addEventListener('resolved', (event) => {

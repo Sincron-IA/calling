@@ -136,6 +136,25 @@ export function notifyAgentsChanged(): void {
   broadcast('agents', { at: Date.now() })
 }
 
+/**
+ * O AGENTE FALA PRIMEIRO.
+ *
+ * Ate aqui o Calling so respondia: o dono pedia, o agente devolvia. Isto e a
+ * outra direcao — a sessao viva do agente empurra um recado para dentro do app
+ * sem que ninguem tenha perguntado nada (`POST /api/agents/:slug/notify`).
+ *
+ * Vai pelo MESMO cano SSE do toque e da identidade, pela mesma razao de sempre:
+ * um segundo canal seria um segundo cookie do Access, uma segunda reconexao e
+ * um segundo jeito de quebrar. O `broadcast` daqui nunca foi "coisa de toque" —
+ * e so o megafone das telas abertas.
+ *
+ * O texto e OPACO: o bridge nao interpreta, so entrega. Quem escreve e o
+ * agente, e quem le e o dono.
+ */
+export function notifyAgentMessage(agentSlug: string, text: string): void {
+  broadcast('agent_message', { agent: agentSlug, text, at: Date.now() })
+}
+
 export function streamCount(): number {
   return streams.size
 }

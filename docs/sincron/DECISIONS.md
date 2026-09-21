@@ -495,3 +495,58 @@ Registre decisões técnicas, exceções e motivos.
   e piscaria a letra; manter o lápis como terceiro botão na linha — rejeitada,
   três ícones iguais por linha competem com as duas ações principais.
 - Revisar em: após o smoke do plan-001 no Electron.
+
+## 2026-09-20 - O Calling vira segunda janela: ele ACORDA a sessão viva
+
+- Contexto: um recado pelo Calling morria dentro da chamada de API. Quem
+  respondia era uma sessão **headless** (`claude -p`, `server/src/claude.ts`),
+  criada só para aquele pedido; a sessão **viva** do agente — a mesma que atende
+  o Telegram, com a memória do dia na cabeça e capaz de começar trabalho — nunca
+  ficava sabendo. O dono falava com a Automa e a Automa, do outro lado, não
+  lembrava de nada. E o caminho de volta não existia: o app só sabia responder,
+  o agente não tinha como empurrar nada para dentro dele.
+- Decisão: duas direções, pelos mecanismos que **já existem**.
+  (a) **Acordar**: depois de responder ao app, o bridge chama `inject_session`
+  (de `<workspace>/.dgclaw/plugin/scripts/_lib/inject.sh`, sempre pelo symlink
+  `.dgclaw/plugin`) com o prompt por **stdin** — o mesmo mecanismo dos
+  agendamentos do DG Claw, que outros scripts internos já reconhecem como "não é
+  o dono falando direto". Recado escrito acorda na hora; **voz não acorda por
+  turno** (seria barulho no meio da conversa): os turnos se acumulam na sessão
+  e viram UM recado no `/api/end-call`.
+  (b) **Empurrar**: `POST /api/agents/:slug/notify` (mesmo `requireSecret` do
+  `/api/message`) faz `broadcast('agent_message', …)` pelo **mesmo** SSE do
+  toque e da identidade. Essa rota nunca acorda ninguém — acordaria quem a
+  chamou, e o ciclo não teria fim.
+  (c) **Opt-in por agente**, `CALLING_WAKE_AGENTS` no `.env`. Hoje só `automa`;
+  os outros cinco continuam com o comportamento exato de antes.
+- Sufixo único na tag: o `inject.sh` carimba em todo poke um cabeçalho de
+  IDEMPOTÊNCIA ("se você JÁ executou '<tag>' em <hoje>, NÃO repita"). Para um
+  cron diário é o certo; para uma CONVERSA seria desastroso — a segunda mensagem
+  do dia seria lida como repetição da primeira. Por isso a tag vai como
+  `calling-msg-<base36 do instante>`: cada recado é um evento próprio.
+- Retentativa em sessão ocupada: o `inject.sh` foi feito para cron — sessão
+  ocupada, ele descarta o poke e conta com o próximo disparo do relógio. Aqui
+  não há próximo disparo, então **nós** somos o relógio: 3 retentativas de 30 s.
+  Esgotadas, vira `wake_gave_up` no log — e o conteúdo já está gravado.
+- Log de CONTEÚDO, autorizado explicitamente pelo dono ("não tenho objeção
+  nenhuma quanto a gravar o que está sendo falado para análise pós"): uma linha
+  NDJSON por troca em `<workspace>/calling-log/<AAAA-MM-DD>.ndjson`, diretório
+  0700 e arquivos 0600, no fuso do dono (UTC faria o arquivo virar às 21 h).
+  **Separado** de `/var/log/calling-bridge/bridge.log`, que é o log de OPERAÇÃO
+  e nunca viu conversa — é a garantia de que ninguém lê o que o dono falou
+  procurando um erro de CORS. Misturar os dois destruiria isso de uma vez.
+- Alternativas: (a) entregar na sessão viva pelos sockets `/tmp/cc-socks/*.sock`
+  — rejeitada em 2026-09-19 e não reaberta; (b) um segundo canal SSE para o
+  recado empurrado — rejeitada pela mesma razão de sempre: segundo cookie do
+  Access, segunda reconexão, segundo jeito de quebrar; (c) acordar a cada turno
+  de voz — rejeitada, encheria a sessão viva no meio da ligação; (d) um booleano
+  global em vez de lista — rejeitada, mudaria os outros cinco agentes de uma vez.
+- Impacto: tudo é fire-and-forget **depois** de o app já ter a resposta na tela;
+  nada disso pode atrasar ou derrubar o que o dono vê. O prompt nunca é
+  interpolado no `bash -c` (workspace e tag entram como `$1`/`$2`, o texto por
+  stdin) — texto do dono não chega perto de uma linha de comando.
+- No app, o recado empurrado cai no **mesmo balão** da resposta do agente: é a
+  mesma coisa (o agente dizendo algo) e um balão só evita duas coisas brigando
+  pelo espaço acima da barra. Sai sozinho, como toda resposta.
+- Revisar em: quando o dono quiser ligar o segundo agente (aí é só a linha do
+  `.env`) — e se 3×30 s se mostrar pouco para uma sessão viva muito ocupada.
