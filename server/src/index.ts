@@ -21,7 +21,7 @@ import {
 } from './auth.js'
 import { askAgent, endCall, sendText } from './claude.js'
 import { createLiveToken } from './gemini.js'
-import { echoToThread } from './telegram.js'
+import { completeEcho, echoToThread } from './telegram.js'
 import {
   attachStream,
   finish,
@@ -337,7 +337,12 @@ app.post('/api/message', requireSecret, async (req, res) => {
       { agent, durationMs: result.durationMs },
       `${agent} respondeu um recado em ${result.durationMs}ms`,
     )
-    res.json({ reply: result.reply, echoed: await echo })
+    const mark = await echo
+    res.json({ reply: result.reply, echoed: mark.ok })
+
+    // Acabamento da thread, DEPOIS de o dono ja ter a resposta na tela: a
+    // mesma mensagem do pedido ganha a resposta embaixo.
+    void completeEcho(agent, mark, text, result.reply)
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500
     logEvent(
@@ -347,6 +352,10 @@ app.post('/api/message', requireSecret, async (req, res) => {
       `mensagem falhou: ${(err as Error).message}`,
     )
     res.status(status).json({ error: (err as Error).message })
+
+    // A thread nao pode ficar com um "respondendo…" eterno quando o agente
+    // falha: a mensagem fecha sem resposta.
+    void echo.then((mark) => completeEcho(agent, mark, text, ''))
   }
 })
 
