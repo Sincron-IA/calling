@@ -24,7 +24,7 @@ const {
   closeConfigPanel,
   closeConfigPanelIfIdle,
 } = require('./config-panel')
-const { createTray, destroyTray } = require('./tray')
+const { createTray, refreshTrayMenu, destroyTray } = require('./tray')
 const store = require('./config-store')
 
 const DEV_URL = process.env.CALLING_APP_URL || ''
@@ -139,6 +139,18 @@ function placeMain(width, height) {
   return { x: Math.round(x), y: Math.round(y), width: w, height: h }
 }
 
+/**
+ * Liga/desliga o "sempre no topo" na janela da barra.
+ *
+ * `screen-saver` e o nivel que fica acima de janelas em tela cheia; para um
+ * widget de canto isso seria demais. `floating` e o que o Luiz espera: por cima
+ * das janelas comuns, e nada mais.
+ */
+function applyAlwaysOnTop(value) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.setAlwaysOnTop(Boolean(value), 'floating')
+}
+
 /** Dois retangulos sao o mesmo, a menos do arredondamento de DPI do Windows. */
 function nearBounds(a, b) {
   return (
@@ -250,6 +262,10 @@ async function createWindow() {
     // profundidade agora e o `box-shadow` do proprio cartao, no CSS.
     hasShadow: false,
     resizable: false,
+    // "Sempre no topo" e uma preferencia do Luiz, nao um padrao: uma barrinha
+    // que insiste em ficar por cima de tudo atrapalha mais do que ajuda quando
+    // ninguem pediu.
+    alwaysOnTop: store.getPrefs().alwaysOnTop,
     maximizable: false,
     fullscreenable: false,
     autoHideMenuBar: true,
@@ -445,6 +461,18 @@ function registerIpc() {
   // (`calling:main-edge`), toda vez que a janela se mexe.
   ipcMain.handle('calling:get-main-edge', () => mainEdgeState())
 
+  ipcMain.handle('calling:get-prefs', () => store.getPrefs())
+
+  /* Quem muda a preferencia pode ser o painel OU a bandeja, entao quem aplica
+     e um lugar so: grava, aplica na janela e devolve o estado novo para os
+     dois se acertarem com ele. */
+  ipcMain.handle('calling:set-prefs', (_event, patch) => {
+    const prefs = store.savePrefs(patch)
+    applyAlwaysOnTop(prefs.alwaysOnTop)
+    refreshTrayMenu(prefs)
+    return prefs
+  })
+
   ipcMain.handle('calling:close-config', () => closeConfigPanel())
 
   ipcMain.handle('calling:show-main', () => showMainWindow())
@@ -468,8 +496,15 @@ app.whenReady().then(() => {
 
   trayReady = Boolean(
     createTray({
+      prefs: store.getPrefs(),
       onToggle: toggleMainWindow,
       onConfig: (anchor) => showConfigPanel(anchor),
+      onAlwaysOnTop: (value) => {
+        const prefs = store.savePrefs({ alwaysOnTop: value })
+        applyAlwaysOnTop(prefs.alwaysOnTop)
+        // O painel pode estar aberto mostrando o contrario.
+        configWindow?.webContents?.send('calling:prefs', prefs)
+      },
       onQuit: () => {
         quitting = true
         app.quit()

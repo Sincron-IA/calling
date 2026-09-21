@@ -325,6 +325,12 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
 
   /** Abre o campo endereçado a um agente, sem tocar na ligacao em curso. */
   const write = useCallback((slug: string) => {
+    /* O CHIP SEGUE QUEM RECEBE.
+       Ligar ja trocava o agente do chip (`startCall`); escrever nao trocava, e
+       o resultado era a barra dizendo "Automa" enquanto o campo aberto acima
+       dela dizia "Para Ivo". Quem se escreve agora e com quem se vai falar de
+       novo em seguida — e o chip existe para ser esse atalho. */
+    setCurrent(slug)
     setCompose({ agentSlug: slug, draft: '', busy: false })
   }, [])
 

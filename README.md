@@ -13,6 +13,12 @@ Nada abre no hover, de proposito: a janela nao tem moldura e veste o tamanho do
 conteudo, entao tudo o que abria so de passar o mouse fazia a janela mudar de
 tamanho debaixo do cursor. Clique abre, clique (ou Esc, ou clicar fora) fecha.
 
+A engrenagem no cabecalho da lista abre a configuracao: a conexao fica
+recolhida numa linha (ela so importa quando quebra) e ao lado dela ficam as
+preferencias — hoje, **sempre no topo**, que tambem esta no menu da bandeja. A
+chave do app nao aparece nem se copia: ela vive cifrada no cofre do sistema, e
+trocar e digitar uma nova, nunca ver a antiga.
+
 Quando um agente e que precisa do Luiz, a barrinha vira um cartao de **chamada
 recebida**, com o motivo em uma linha e tres saidas: `Aprovar` (resolve na hora,
 sem voz), atender por voz, ou recusar — e a recusa (no dedo ou por tempo) cai

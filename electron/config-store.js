@@ -38,6 +38,37 @@ function readFile() {
   }
 }
 
+/*
+ * AS PREFERENCIAS.
+ *
+ * Moram no MESMO arquivo da conexao, num ramo separado: sao poucas, mudam
+ * pouco, e um segundo arquivo so para elas seria um segundo caminho para
+ * manter. Nenhuma e segredo — vao em JSON limpo, ao contrario da chave.
+ */
+
+/** Como o app comeca quando nao ha nada gravado. */
+const DEFAULT_PREFS = { alwaysOnTop: false }
+
+function getPrefs() {
+  const raw = readFile()
+  const prefs = raw && typeof raw.prefs === 'object' && raw.prefs ? raw.prefs : {}
+  return { ...DEFAULT_PREFS, alwaysOnTop: prefs.alwaysOnTop === true }
+}
+
+/**
+ * Grava as preferencias SEM tocar na conexao.
+ *
+ * O arquivo e lido e reescrito inteiro, entao quem grava uma parte tem que
+ * preservar a outra — senao mudar "sempre no topo" apagaria a chave.
+ */
+function savePrefs(patch) {
+  const raw = readFile() || {}
+  const next = { ...raw, prefs: { ...getPrefs(), ...(patch || {}) } }
+  fs.mkdirSync(path.dirname(configFile()), { recursive: true })
+  fs.writeFileSync(configFile(), JSON.stringify(next, null, 2), { mode: 0o600 })
+  return getPrefs()
+}
+
 /** O que a tela de conexao precisa saber, ou `null` se nunca houve config. */
 function getConfig() {
   const raw = readFile()
@@ -64,7 +95,10 @@ function saveConfig(config) {
   sessionSecret = sharedSecret
 
   const vault = hasVault()
+  // O que ja estava no arquivo e nao e conexao (hoje: as preferencias) fica.
+  const previous = readFile() || {}
   const payload = {
+    ...previous,
     bridgeUrl,
     // Sem cofre, marcamos o motivo — e nao gravamos a chave de jeito nenhum.
     secret: vault
@@ -79,13 +113,20 @@ function saveConfig(config) {
   return { secretPersisted: vault }
 }
 
+/**
+ * Esquece a CONEXAO — endereco e chave.
+ *
+ * As preferencias ficam: desconectar do bridge nao e motivo para a janela
+ * parar de ficar sempre no topo. Antes isto apagava o arquivo inteiro.
+ */
 function clearConfig() {
   sessionSecret = ''
+  const prefs = getPrefs()
   try {
-    fs.rmSync(configFile(), { force: true })
+    fs.writeFileSync(configFile(), JSON.stringify({ prefs }, null, 2), { mode: 0o600 })
   } catch {
-    /* ja nao existia */
+    /* sem arquivo para reescrever: nao ha o que esquecer */
   }
 }
 
-module.exports = { getConfig, saveConfig, clearConfig, configFile }
+module.exports = { getConfig, saveConfig, clearConfig, getPrefs, savePrefs, configFile }

@@ -57,6 +57,22 @@ contextBridge.exposeInMainWorld('callingDesktop', {
     return () => ipcRenderer.removeListener('calling:main-edge', listener)
   },
 
+  /** As preferencias do app (hoje: "sempre no topo"). */
+  getPrefs: () => ipcRenderer.invoke('calling:get-prefs'),
+
+  /** Muda uma preferencia e devolve o estado novo, ja aplicado. */
+  setPrefs: (patch) => ipcRenderer.invoke('calling:set-prefs', patch),
+
+  /**
+   * Avisa quando uma preferencia mudou POR FORA — hoje, pela bandeja. Sem isto
+   * o painel aberto ficaria mostrando o contrario do que vale.
+   */
+  onPrefs: (handler) => {
+    const listener = (_event, prefs) => handler(prefs)
+    ipcRenderer.on('calling:prefs', listener)
+    return () => ipcRenderer.removeListener('calling:prefs', listener)
+  },
+
   /** Fecha o painel (o proprio painel chama isto). */
   closeConfigPanel: () => ipcRenderer.invoke('calling:close-config'),
 

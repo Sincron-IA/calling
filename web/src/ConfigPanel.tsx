@@ -29,10 +29,18 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from '@/components/ui/field'
+import { Switch } from '@/components/ui/switch'
 import { ConnectScreen, ConnectingCard, type ConnectPhase } from './ConnectScreen'
 import { fetchAgents } from './bridge'
 import { DEFAULT_BRIDGE_URL, setConfig } from './config'
-import { desktop } from './desktop'
+import { desktop, type AppPrefs } from './desktop'
 
 const GENERIC_ERROR = 'Não consegui falar com o bridge. Confira o endereço e a chave.'
 
@@ -62,6 +70,7 @@ export function ConfigPanel() {
   const [error, setError] = useState('')
   const [secretPersisted, setSecretPersisted] = useState(true)
   const [saved, setSaved] = useState({ bridgeUrl: DEFAULT_BRIDGE_URL, sharedSecret: '' })
+  const [prefs, setPrefs] = useState<AppPrefs>({ alwaysOnTop: false })
 
   const close = useCallback(() => void api.closeConfigPanel(), [api])
 
@@ -120,6 +129,39 @@ export function ConfigPanel() {
     observer.observe(card)
     return () => observer.disconnect()
   }, [api, loaded, phase])
+
+  /* AS PREFERENCIAS.
+
+     Quem grava e o processo principal — ele e quem aplica na janela. Ficamos
+     ouvindo porque a mesma opcao existe no menu da bandeja: mudar por la com o
+     painel aberto deixaria o interruptor daqui mostrando o contrario. */
+  useEffect(() => {
+    let alive = true
+    void api
+      .getPrefs()
+      .then((value) => {
+        if (alive && value) setPrefs(value)
+      })
+      .catch(() => undefined)
+
+    const stop = api.onPrefs((value) => {
+      if (value) setPrefs(value)
+    })
+
+    return () => {
+      alive = false
+      stop?.()
+    }
+  }, [api])
+
+  const togglePref = useCallback(
+    (patch: Partial<AppPrefs>) => {
+      // O estado vem de volta do processo principal, ja aplicado: assim o
+      // interruptor nunca diz uma coisa e a janela faz outra.
+      void api.setPrefs(patch).then((next) => next && setPrefs(next))
+    },
+    [api],
+  )
 
   // Esc fecha, como em qualquer menu.
   useEffect(() => {
@@ -208,6 +250,24 @@ export function ConfigPanel() {
       onForget={saved.sharedSecret ? () => void forget() : undefined}
       onCancel={close}
       cancelLabel="Fechar"
+      preferences={
+        <FieldGroup className="gap-3">
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldLabel htmlFor="always-on-top">Sempre no topo</FieldLabel>
+              <FieldDescription>
+                A barra fica por cima das outras janelas. A mesma opção está no
+                menu da bandeja.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="always-on-top"
+              checked={prefs.alwaysOnTop}
+              onCheckedChange={(value) => togglePref({ alwaysOnTop: value })}
+            />
+          </Field>
+        </FieldGroup>
+      }
       footer={
         <>
           <Button variant="ghost" size="sm" type="button" onClick={() => void api.showMainWindow()}>

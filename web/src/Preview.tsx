@@ -18,6 +18,14 @@ import { AgentPanel } from './AgentPanel'
 import { CallingBar } from './CallingBar'
 import { ConnectScreen, ConnectingCard } from './ConnectScreen'
 import { Button } from '@/components/ui/button'
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from '@/components/ui/field'
+import { Switch } from '@/components/ui/switch'
 import type { AgentSummary } from './bridge'
 import type { IncomingCall } from './incoming'
 
@@ -63,6 +71,24 @@ const BASE = {
   onDecline: NADA,
   // A engrenagem so aparece quando ha para onde ela levar.
   onOpenConfig: NADA,
+}
+
+/** As preferencias que o `ConfigPanel` monta de verdade. */
+function Prefs() {
+  const [on, setOn] = useState(false)
+  return (
+    <FieldGroup className="gap-3">
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldLabel htmlFor="aot">Sempre no topo</FieldLabel>
+          <FieldDescription>
+            A barra fica por cima das outras janelas. A mesma opção está no menu da bandeja.
+          </FieldDescription>
+        </FieldContent>
+        <Switch id="aot" checked={on} onCheckedChange={setOn} />
+      </Field>
+    </FieldGroup>
+  )
 }
 
 /** O rodape que o `ConfigPanel` monta de verdade. */
@@ -220,6 +246,7 @@ export function Preview() {
               onForget={NADA}
               onCancel={NADA}
               cancelLabel="Fechar"
+              preferences={<Prefs />}
               footer={<Footer />}
             />
           </Case>
@@ -284,6 +311,7 @@ export function Preview() {
               onForget={NADA}
               onCancel={NADA}
               cancelLabel="Fechar"
+              preferences={<Prefs />}
               footer={<Footer />}
             />
           </Case>

@@ -26,6 +26,17 @@ export interface StoredConfig {
   secretPersisted: boolean
 }
 
+/**
+ * O que o app lembra entre execucoes e nao e segredo.
+ *
+ * Mora no mesmo arquivo da conexao, num ramo separado — ver
+ * `electron/config-store.js`.
+ */
+export interface AppPrefs {
+  /** A barra fica por cima das janelas comuns. */
+  alwaysOnTop: boolean
+}
+
 export interface CallingDesktopApi {
   /** Config salva, ou `null` se esta e a primeira vez. */
   getConfig(): Promise<StoredConfig | null>
@@ -58,6 +69,12 @@ export interface CallingDesktopApi {
    * funcao que para de ouvir.
    */
   onMainEdge(handler: (state: MainEdgeState) => void): () => void
+  /** As preferencias do app. */
+  getPrefs(): Promise<AppPrefs>
+  /** Muda uma preferencia; devolve o estado novo, ja aplicado na janela. */
+  setPrefs(patch: Partial<AppPrefs>): Promise<AppPrefs>
+  /** Ouve as mudancas feitas por fora (a bandeja). Devolve como parar. */
+  onPrefs(handler: (prefs: AppPrefs) => void): () => void
   /** Fecha o painel de configuracao (chamado de dentro dele). */
   closeConfigPanel(): Promise<void>
   /** Traz a janela da barra para frente. */

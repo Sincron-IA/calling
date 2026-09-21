@@ -12,6 +12,9 @@ const ICON_FILE = path.join(__dirname, 'assets', 'tray-icon.png')
 
 let tray = null
 
+/** Remonta o menu com as preferencias novas. Trocada em `createTray`. */
+let refreshMenu = () => {}
+
 function trayImage() {
   const image = nativeImage.createFromPath(ICON_FILE)
   if (image.isEmpty()) return image
@@ -26,10 +29,10 @@ function trayImage() {
 }
 
 /**
- * @param {{onToggle:()=>void, onConfig:(anchor:Electron.Rectangle|null)=>void, onQuit:()=>void}} actions
+ * @param {{prefs:{alwaysOnTop:boolean}, onToggle:()=>void, onConfig:(anchor:Electron.Rectangle|null)=>void, onAlwaysOnTop:(value:boolean)=>void, onQuit:()=>void}} actions
  * @returns {Electron.Tray | null}
  */
-function createTray({ onToggle, onConfig, onQuit }) {
+function createTray({ prefs, onToggle, onConfig, onAlwaysOnTop, onQuit }) {
   const image = trayImage()
   if (image.isEmpty()) {
     console.warn(`[calling] icone da bandeja nao encontrado em ${ICON_FILE}`)
@@ -51,14 +54,36 @@ function createTray({ onToggle, onConfig, onQuit }) {
   }
 
   tray.setToolTip('Calling')
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Mostrar/esconder', click: () => onToggle() },
-      { label: 'Configuração…', click: () => onConfig(anchor()) },
-      { type: 'separator' },
-      { label: 'Sair', click: () => onQuit() },
-    ]),
-  )
+  buildMenu(prefs)
+
+  /*
+   * O menu e REMONTADO a cada mudanca, nao remendado.
+   *
+   * Um `MenuItem` do Electron nao aceita ter o `checked` trocado depois de o
+   * menu estar montado — mexer nele nao repinta nada. Entao a marca so fica
+   * certa se o template for construido de novo, e e por isso que isto e uma
+   * funcao e nao um objeto guardado.
+   */
+  function buildMenu(current) {
+    if (!tray || tray.isDestroyed()) return
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: 'Mostrar/esconder', click: () => onToggle() },
+        {
+          label: 'Sempre no topo',
+          type: 'checkbox',
+          checked: Boolean(current?.alwaysOnTop),
+          click: (item) => onAlwaysOnTop(item.checked),
+        },
+        { type: 'separator' },
+        { label: 'Configuração…', click: () => onConfig(anchor()) },
+        { type: 'separator' },
+        { label: 'Sair', click: () => onQuit() },
+      ]),
+    )
+  }
+
+  refreshMenu = buildMenu
 
   tray.on('click', () => onToggle())
   tray.on('double-click', () => onToggle())
@@ -66,9 +91,14 @@ function createTray({ onToggle, onConfig, onQuit }) {
   return tray
 }
 
+/** Quem mudou a preferencia por fora (o painel) reacerta a marca daqui. */
+function refreshTrayMenu(prefs) {
+  refreshMenu(prefs)
+}
+
 function destroyTray() {
   if (tray && !tray.isDestroyed()) tray.destroy()
   tray = null
 }
 
-module.exports = { createTray, destroyTray }
+module.exports = { createTray, refreshTrayMenu, destroyTray }

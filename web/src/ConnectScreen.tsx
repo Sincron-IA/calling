@@ -21,11 +21,14 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
   CheckIcon,
+  ChevronDownIcon,
   CopyIcon,
   EyeIcon,
   EyeOffIcon,
   KeyRoundIcon,
+  ShieldCheckIcon,
   PencilIcon,
+  PlugZapIcon,
   RefreshCwIcon,
   ServerIcon,
   UnplugIcon,
@@ -34,6 +37,11 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { ButtonGroup } from '@/components/ui/button-group'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -79,6 +87,22 @@ export interface ConnectScreenProps {
   onForget?: () => void
   /** Linha de acoes no pe do cartao (so o painel usa). */
   footer?: ReactNode
+  /**
+   * O que o app lembra: "sempre no topo" e o que vier depois.
+   *
+   * So aparece com a conexao de pe — com ela quebrada, nao ha o que preferir
+   * antes de resolver aquilo.
+   */
+  preferences?: ReactNode
+}
+
+/** So o hostname, para a linha recolhida nao virar um paragrafo. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
 }
 
 /* ------------------------------------------------------------------ peças -- */
@@ -238,15 +262,6 @@ function SavedConnection({
   onEdit: () => void
   disabled: boolean
 }) {
-  const [revealed, setRevealed] = useState(false)
-
-  // A chave revelada nao fica revelada: sai de cena sozinha.
-  useEffect(() => {
-    if (!revealed) return
-    const id = window.setTimeout(() => setRevealed(false), 12_000)
-    return () => window.clearTimeout(id)
-  }, [revealed])
-
   return (
     <ItemGroup className="border-border/60 bg-muted/30 rounded-lg border px-3">
       <SavedRow
@@ -267,45 +282,33 @@ function SavedConnection({
 
       <Separator />
 
+      {/*
+        A CHAVE NAO APARECE, E NAO SE COPIA.
+        Ela vive cifrada no cofre do sistema (DPAPI no Windows, Keychain no
+        macOS, libsecret no Linux) — mostrar ou copiar na tela desfaz o unico
+        motivo de ela estar la. O que fica e a confirmacao de que existe uma, e
+        onde ela esta guardada. Trocar a chave e pelo `Editar`, que pede uma
+        nova em vez de devolver a antiga.
+      */}
       <SavedRow
         icon={KeyRoundIcon}
         label="Chave do app"
         value={
           secretPersisted && secret ? (
-            revealed ? (
-              secret
-            ) : (
-              '•'.repeat(Math.min(Math.max(secret.length, 8), 18))
-            )
+            <span className="flex items-center gap-1.5">
+              <span className="font-mono">••••••••••••</span>
+              <ShieldCheckIcon className="text-ok size-3" aria-hidden="true" />
+              <span className="text-muted-foreground font-sans text-[0.6875rem]">
+                no cofre do sistema
+              </span>
+            </span>
           ) : (
             <span className="text-muted-foreground font-sans italic">
               não fica guardada nesta máquina
             </span>
           )
         }
-        mono
-      >
-        {secretPersisted && secret && (
-          <>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  type="button"
-                  aria-pressed={revealed}
-                  aria-label={revealed ? 'Esconder a chave' : 'Mostrar a chave'}
-                  onClick={() => setRevealed((on) => !on)}
-                >
-                  {revealed ? <EyeOffIcon /> : <EyeIcon />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{revealed ? 'Esconder' : 'Mostrar'}</TooltipContent>
-            </Tooltip>
-            <CopyButton value={secret} label="Copiar a chave" />
-          </>
-        )}
-      </SavedRow>
+      />
 
       <Separator />
 
@@ -370,9 +373,12 @@ export function ConnectScreen({
   connected = false,
   onForget,
   footer,
+  preferences,
 }: ConnectScreenProps) {
   const [url, setUrl] = useState(defaultBridgeUrl)
-  const [secret, setSecret] = useState(defaultSecret)
+  /* O campo da chave nasce VAZIO, mesmo com uma chave guardada: a antiga nunca
+     volta para a tela. Em branco = mantem a que esta no cofre. */
+  const [secret, setSecret] = useState('')
   const [showSecret, setShowSecret] = useState(false)
 
   /**
@@ -384,6 +390,8 @@ export function ConnectScreen({
    * decisao explicita.
    */
   const [editing, setEditing] = useState(false)
+  // A conexao comeca recolhida: com tudo de pe, ela nao e o assunto.
+  const [showConnection, setShowConnection] = useState(false)
   const saved = defaultBridgeUrl.trim() !== '' && defaultSecret.trim() !== ''
   const locked = !editing && saved
 
@@ -404,13 +412,15 @@ export function ConnectScreen({
 
   const waiting = phase === 'login'
   const busy = waiting || submitting
-  const ready = url.trim().length > 0 && secret.trim().length > 0
+  /* Com uma chave ja guardada, o campo em branco vale: e o "deixa como esta".
+     Sem nada guardado (primeira vez), ela e obrigatoria. */
+  const ready = url.trim().length > 0 && (secret.trim().length > 0 || saved)
 
   function submit(event: FormEvent) {
     event.preventDefault()
     if (!ready || busy) return
     setSubmitting(true)
-    onConnect(url.trim(), secret)
+    onConnect(url.trim(), secret || defaultSecret)
   }
 
   const connectLabel = busy ? (waiting ? 'Esperando o login…' : 'Abrindo…') : 'Conectar ao Cloudflare'
@@ -421,30 +431,75 @@ export function ConnectScreen({
 
       {connected && !editing ? (
         /* JA ESTA TUDO DE PE.
-           Nenhum formulario e nenhum botao de "conectar": o que resta e
-           conferir o que esta guardado e, se for o caso, refazer o login (que
-           e uma acao secundaria — nao a acao da tela). */
-        <>
-          <SavedConnection
-            url={url}
-            secret={secret}
-            secretPersisted={secretPersisted}
-            onEdit={() => setEditing(true)}
-            disabled={busy}
-          />
 
-          <ButtonGroup className="w-full [&>*]:flex-1">
-            <Button variant="outline" size="sm" type="submit" disabled={busy}>
-              {busy ? <Spinner data-icon="inline-start" /> : <RefreshCwIcon data-icon="inline-start" />}
-              {busy ? connectLabel : 'Refazer login'}
-            </Button>
-            {onForget && (
-              <Button variant="outline" size="sm" type="button" onClick={onForget} disabled={busy}>
-                <UnplugIcon data-icon="inline-start" />
-                Desconectar
+           E entao a conexao nao e mais o assunto: ela vira UMA LINHA que diz
+           que esta tudo certo e com que endereco. Quem abriu a engrenagem com
+           o app funcionando quase nunca veio mexer nela — veio ver ou mudar o
+           resto. O endereco, a chave e as saidas continuam a um clique, dentro
+           dessa linha. */
+        <>
+          <Collapsible open={showConnection} onOpenChange={setShowConnection}>
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                className="h-auto w-full justify-between gap-2 px-2 py-2"
+                type="button"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <PlugZapIcon className="text-ok" />
+                  <span className="flex min-w-0 flex-col items-start gap-0.5">
+                    <span className="text-sm font-medium">Conexão</span>
+                    <span className="text-muted-foreground max-w-44 truncate font-mono text-[0.6875rem]">
+                      {hostOf(url)}
+                    </span>
+                  </span>
+                </span>
+                <ChevronDownIcon
+                  className={cn('transition-transform', showConnection && 'rotate-180')}
+                />
               </Button>
-            )}
-          </ButtonGroup>
+            </CollapsibleTrigger>
+
+            <CollapsibleContent className="flex flex-col gap-3 pt-2">
+              <SavedConnection
+                url={url}
+                secret={defaultSecret}
+                secretPersisted={secretPersisted}
+                onEdit={() => setEditing(true)}
+                disabled={busy}
+              />
+
+              <ButtonGroup className="w-full [&>*]:flex-1">
+                <Button variant="outline" size="sm" type="submit" disabled={busy}>
+                  {busy ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <RefreshCwIcon data-icon="inline-start" />
+                  )}
+                  {busy ? connectLabel : 'Refazer login'}
+                </Button>
+                {onForget && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={onForget}
+                    disabled={busy}
+                  >
+                    <UnplugIcon data-icon="inline-start" />
+                    Desconectar
+                  </Button>
+                )}
+              </ButtonGroup>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {preferences && (
+            <>
+              <Separator />
+              {preferences}
+            </>
+          )}
         </>
       ) : locked ? (
         /* Guardado, mas a sessao caiu (ou e a chave que esta errada). O que
@@ -452,7 +507,7 @@ export function ConnectScreen({
         <>
           <SavedConnection
             url={url}
-            secret={secret}
+            secret={defaultSecret}
             secretPersisted={secretPersisted}
             onEdit={() => setEditing(true)}
             disabled={busy}
@@ -491,7 +546,7 @@ export function ConnectScreen({
                   autoComplete="off"
                   spellCheck={false}
                   className="font-mono text-xs"
-                  placeholder="••••••••••••••••"
+                  placeholder={saved ? 'Manter a chave atual' : '••••••••••••••••'}
                   value={secret}
                   disabled={busy}
                   onChange={(e) => setSecret(e.target.value)}
@@ -508,11 +563,11 @@ export function ConnectScreen({
                   </InputGroupButton>
                 </InputGroupAddon>
               </InputGroup>
-              {saved && (
-                <FieldDescription>
-                  Isto substitui o que já estava guardado.
-                </FieldDescription>
-              )}
+              <FieldDescription>
+                {saved
+                  ? 'Em branco mantém a chave que já está no cofre.'
+                  : 'Fica cifrada no cofre do sistema — não volta para a tela depois.'}
+              </FieldDescription>
             </Field>
           </FieldGroup>
 
