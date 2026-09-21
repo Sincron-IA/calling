@@ -116,10 +116,13 @@ principal sem precisar de nada disso.
 
 ```bash
 curl -s -X POST "$CALLING_BRIDGE_URL/api/agents/<seu-slug>/notify" \
-  -H "Authorization: Bearer $CALLING_SHARED_SECRET" \
+  -H "Authorization: Bearer $CALLING_RING_TOKEN_<SEU_SLUG>" \
   -H "Content-Type: application/json" \
   -d '{"text": "um aviso curto, sem esperar nada de volta"}'
 ```
+
+(mesma credencial do toque — o `:slug` na URL precisa bater com o dono do
+token, senão a rota recusa)
 
 ## O lado do humano
 

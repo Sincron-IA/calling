@@ -627,3 +627,28 @@ Registre decisões técnicas, exceções e motivos.
   dono trocou as seis caras sem recarregar.
 - Revisar em: se algum bot trocar de foto e alguém quiser a nova sem apagar a
   antiga na mão — aí é a hora de discutir um refresh manual, e não antes.
+
+## 2026-09-21 - `/notify` trocou de credencial: a premissa de "já está na VPS" era falsa
+
+- Contexto: a entrada de 2026-09-20 acima (item b, "Empurrar") descreve
+  `/api/agents/:slug/notify` protegido pelo `requireSecret` (segredo do app),
+  com a justificativa de que "quem usa essa rota já está dentro da máquina,
+  com o `.env` na mão". Na prática, cada agente roda isolado no próprio
+  workspace e nunca teve acesso ao `.env` do bridge — a mesma premissa falsa
+  que gerou o furo do `CALLING_RING_TOKEN_<SLUG>` (ver seção de hoje mais
+  acima/no README). Efeito colateral pior: o `:slug` da URL era um nome
+  auto-declarado, nunca verificado — qualquer portador do segredo do app
+  podia empurrar recado no nome de QUALQUER agente.
+- Decisão: `/notify` passou a usar `requireAgentToken`, a MESMA credencial do
+  toque (`CALLING_RING_TOKEN_<SLUG>`). A identidade vem de `req.ringAgent`
+  (o token, nunca a URL); o `:slug` na URL agora só serve de conferência —
+  bate ou a rota devolve `400`. Apontado pelo dono (Luiz, 21/09/2026): "o
+  certo era usar a mesma, né?" — e estava certo.
+- Impacto: ninguém precisa de uma segunda credencial só para empurrar recado.
+  Quem só tinha `CALLING_SHARED_SECRET` no ambiente (e não o token de toque)
+  perde acesso a esta rota especificamente — as outras rotas do app
+  (`/api/message`, `/api/ask`, etc.) continuam com `requireSecret`, isso não
+  mudou.
+- Revisar em: se um dia existir um agente com credencial de toque mas sem
+  vínculo nenhum com o workspace do Claude Code (fora do universo DG Claw),
+  reavaliar se faz sentido ele também falar por `/notify` do mesmo jeito.

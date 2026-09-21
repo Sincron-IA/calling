@@ -183,7 +183,7 @@ botao e sem ninguem ficar pendurado:
 
 ```bash
 curl -X POST http://127.0.0.1:8787/api/agents/automa/notify \
-  -H "authorization: Bearer $CALLING_SHARED_SECRET" \
+  -H "authorization: Bearer $CALLING_RING_TOKEN_AUTOMA" \
   -H "content-type: application/json" \
   -d '{"text":"Deploy terminou: verde. Nao precisa fazer nada."}'
 {"ok":true,"listeners":1}
@@ -193,9 +193,12 @@ curl -X POST http://127.0.0.1:8787/api/agents/automa/notify \
 app fechado; o recado simplesmente nao alcancou ninguem, e quem chamou precisa
 saber disso pela resposta, nao pelo log. Teto de 2000 caracteres.
 
-Repare no segredo: aqui e o `CALLING_SHARED_SECRET` (o do app), e nao o
-`CALLING_RING_TOKEN_<SLUG>` do toque — quem usa esta rota ja esta dentro da VPS,
-com o `.env` na mao.
+Repare no segredo: e a MESMA credencial de toque (`CALLING_RING_TOKEN_<SLUG>`),
+nao o `CALLING_SHARED_SECRET` do app (21/09/2026: era o segredo do app antes,
+mas isso deixava qualquer portador dele falar no nome de QUALQUER agente na
+URL, sem provar nada — a credencial de toque prova identidade de verdade,
+entao virou a mesma pros dois usos). O `:slug` da URL precisa bater com o
+dono do token, senao a rota responde `400`.
 
 ## Quando o dono fala pelo Calling, a sessao VIVA fica sabendo
 

@@ -260,17 +260,30 @@ const NOTIFY_MAX_LENGTH = 2000
  * Nao e o `/api/ring`: aquele TOCA e fica pendurado esperando uma decisao. Este
  * so fala e vai embora — um recado na tela, sem botao e sem resposta.
  *
- * Protegido pelo MESMO segredo do app (nao pela credencial de toque): quem usa
- * esta rota ja esta dentro da maquina, com o `.env` na mao.
+ * Autenticado pela MESMA credencial do toque (`CALLING_RING_TOKEN_<SLUG>`), e
+ * nao pelo segredo do app. A regra antiga dizia que "quem usa esta rota ja
+ * esta dentro da maquina, com o `.env` na mao" — e isso nao e verdade nesta
+ * arquitetura: cada agente roda isolado no seu proprio workspace e nao enxerga
+ * o `.env` privado do bridge. Exigir o segredo do app obrigaria cada agente a
+ * carregar uma SEGUNDA credencial so para isto, fazendo o mesmo papel da que
+ * ele ja tem para tocar.
+ *
+ * E pior do que a friccao: o segredo do app nao diz QUEM esta falando, entao o
+ * `:slug` da URL era um nome auto-declarado — qualquer portador do segredo
+ * podia empurrar um recado no nome de qualquer agente. A credencial de toque
+ * prova identidade de verdade (ela sai do segredo, nunca de um nome afirmado),
+ * por isso quem fala aqui e `req.ringAgent`, e o `:slug` da URL so sobrevive
+ * como conferencia.
  *
  * E NUNCA acorda ninguem. Se acordasse, um recado empurrado pela sessao viva
  * voltaria para ela mesma, e o ciclo nao teria fim.
  */
-app.post('/api/agents/:slug/notify', requireSecret, (req, res) => {
+app.post('/api/agents/:slug/notify', requireAgentToken, (req, res) => {
+  // A identidade vem do TOKEN, nunca do caminho da URL.
+  const agent = req.ringAgent!
   const slug = String(req.params.slug || '')
-  const agent = findAgent(slug)
-  if (!agent) {
-    res.status(400).json({ error: 'Agente desconhecido.' })
+  if (slug !== agent.slug) {
+    res.status(400).json({ error: 'O slug na URL nao bate com o agente autenticado pelo token.' })
     return
   }
 
