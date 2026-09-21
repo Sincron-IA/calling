@@ -95,11 +95,31 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/**
+ * O que um status de resposta QUER DIZER para quem esta na tela.
+ *
+ * "Bridge respondeu 401" e verdade e nao ajuda. Cada um destes casos tem uma
+ * saida diferente — trocar a chave, esperar o servico voltar, refazer o login —
+ * e a tela so consegue apontar a saida certa se souber qual e o caso.
+ */
+function explainStatus(status: number): string {
+  if (status === 401 || status === 403) {
+    return 'O bridge respondeu, mas recusou a chave do app. Confira a chave.'
+  }
+  if (status === 404) {
+    return 'O endereco respondeu, mas nao parece ser um bridge do Calling. Confira o endereco.'
+  }
+  if (status >= 500) {
+    return `O bridge esta no ar mas quebrou ao responder (${status}). O problema e la, nao aqui.`
+  }
+  return `O bridge respondeu ${status}, que eu nao esperava.`
+}
+
 export async function fetchAgents(): Promise<AgentSummary[]> {
   const res = await call('/api/agents', {
     headers: { authorization: `Bearer ${sharedSecret()}` },
   })
-  if (!res.ok) throw new Error(`Nao consegui listar os agentes (${res.status})`)
+  if (!res.ok) throw new Error(explainStatus(res.status))
   const data = (await res.json()) as { agents: AgentSummary[] }
   return data.agents
 }

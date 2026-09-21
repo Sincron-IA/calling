@@ -36,6 +36,23 @@ import { desktop } from './desktop'
 
 const GENERIC_ERROR = 'Não consegui falar com o bridge. Confira o endereço e a chave.'
 
+/**
+ * A tela diz o que o bridge disse.
+ *
+ * Antes, toda falha de `fetchAgents` virava a MESMA frase generica — e ela
+ * cobria tres problemas com saidas opostas: a chave errada, a sessao do
+ * Cloudflare barrando a chamada antes de ela chegar no Node, e o bridge fora do
+ * ar. Quem lia nao tinha como saber qual dos tres era, e o unico lugar onde a
+ * diferenca importava era justamente este.
+ *
+ * O `BridgeUnreachableError` ja nasce com o texto certo; o resto traz o motivo
+ * do proprio bridge. A frase generica fica so para o erro sem mensagem nenhuma.
+ */
+function explainFailure(err: unknown): string {
+  const message = err instanceof Error ? err.message.trim() : ''
+  return message || GENERIC_ERROR
+}
+
 export function ConfigPanel() {
   const api = desktop!
 
@@ -143,8 +160,8 @@ export function ConfigPanel() {
       setPhase('validating')
       try {
         await fetchAgents()
-      } catch {
-        setError(GENERIC_ERROR)
+      } catch (err) {
+        setError(explainFailure(err))
         setStatus('reconectar')
         setPhase('form')
         return
