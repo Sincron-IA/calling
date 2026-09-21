@@ -45,6 +45,15 @@ const GENERIC_ERROR = 'Não consegui falar com o bridge. Confira o endereço e a
 const SETTLE_MS = 280
 
 /**
+ * Quanto a janela cresce ALEM do conteudo quando algo comeca a abrir.
+ *
+ * Cobre com sobra o que ainda falta de qualquer transicao da interface (a maior
+ * e o chip, ~215px de largura). O excedente e transparente e sai no `settle`
+ * logo em seguida — o que ele compra e a janela nunca correr atras do conteudo.
+ */
+const GROW_SLACK = 320
+
+/**
  * A tela diz o que o bridge disse.
  *
  * Antes, toda falha de `fetchAgents` virava a MESMA frase generica — e ela
@@ -145,16 +154,25 @@ export function DesktopGate() {
     }
 
     /*
-     * Crescer e imediato; encolher espera a animacao terminar.
+     * DUAS CHAMADAS POR GESTO, NAO CATORZE.
      *
-     * O chip cresce e encolhe em 240ms de transicao CSS, e o observador dispara
-     * a cada quadro dela. Mandando todos, a janela encolhia DEBAIXO do cursor no
-     * meio do fechamento: o ponto onde o mouse estava saia da janela, o chip
-     * recebia um `pointerleave`, e o proximo quadro devolvia um `pointerenter`
-     * — a barra piscava aberta/fechada sem parar.
+     * O chip abre em 240ms de transicao CSS e o observador dispara a cada
+     * quadro dela. A versao anterior segurava o ENCOLHER mas mandava todo
+     * quadro do CRESCER — uns catorze `setBounds` em sequencia, cada um por
+     * IPC, cada um assincrono. A janela ficava alguns quadros atras do
+     * conteudo, entao por um instante ela era mais estreita do que o que havia
+     * dentro dela: o conteudo aparecia cortado a esquerda (o "estrangulado") e
+     * a borda esquerda varria por baixo do cursor (o "pulando"), o que ainda
+     * devolvia `pointerenter`/`pointerleave` sinteticos.
      *
-     * Uma janela maior que o conteudo nao aparece (ela e transparente), entao
-     * segurar o encolhimento por um instante nao custa nada visualmente.
+     * A janela nao pode ir ATRAS da animacao — ela tem que ja estar grande
+     * quando a animacao comeca. Como o tamanho final so se conhece no fim,
+     * crescemos de uma vez com folga: um retangulo maior que o conteudo e
+     * invisivel (a janela e transparente), entao a folga nao custa nada, e os
+     * quadros seguintes ja cabem nela e nao mandam mais nada.
+     *
+     * Fica assim: UMA chamada ao comecar a crescer, e UMA no fim, quando o
+     * conteudo para e a janela veste o tamanho exato.
      */
     const read = () => {
       const rect = root.getBoundingClientRect()
@@ -175,13 +193,20 @@ export function DesktopGate() {
       if (width < 1 || height < 1) return
 
       window.clearTimeout(shrinkTimer)
-      // Encolher (ou um crescimento que ainda esta a caminho) espera a calmaria.
+      // O tamanho exato vem depois que tudo parar — inclusive o que cresceu com
+      // folga aqui em cima.
       shrinkTimer = window.setTimeout(settle, SETTLE_MS)
 
-      // Crescer nao espera: o conteudo novo nao pode aparecer cortado.
-      if (width > applied.width || height > applied.height) {
-        send(Math.max(width, applied.width), Math.max(height, applied.height))
-      }
+      // Ja cabe? Entao nao ha nada a fazer: e um quadro do meio da animacao.
+      if (width <= applied.width && height <= applied.height) return
+
+      // Nao cabe: cresce de uma vez, com a folga que cobre o resto da animacao.
+      // A folga vai so no eixo que esta crescendo — um retangulo transparente
+      // maior que o conteudo nao aparece, mas engole clique enquanto existe.
+      send(
+        width > applied.width ? width + GROW_SLACK : applied.width,
+        height > applied.height ? height + GROW_SLACK : applied.height,
+      )
     }
 
     // Um quadro por vez: o observador dispara varias vezes dentro do mesmo.

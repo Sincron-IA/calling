@@ -184,25 +184,43 @@
 
 /* ---- 2. As tres barrinhas do audio ------------------------------------- */
 /*                                                                           */
-/* Mudas quando parado, vivas na ligacao. Identidade visual, nao componente. */
+/* Mudas quando parado, vivas na ligacao. Identidade visual, nao componente.  */
+/*                                                                           */
+/* As tres alturas em repouso sao DIFERENTES (7, 13, 9) de proposito: e isso  */
+/* que faz a silhueta ler como um equalizador parado, e nao como tres pontos  */
+/* iguais. Na migracao elas foram achatadas para 5px cada e o chip virou      */
+/* "...". Mesmos numeros do desenho aprovado, de volta.                       */
 
 @utility wave {
   display: flex;
   align-items: flex-end;
-  gap: 2px;
-  height: 14px;
+  gap: 3px;
+  height: 18px;
 
   & > i {
-    width: 2px;
-    height: 5px;
-    border-radius: 1px;
+    width: 3px;
+    border-radius: 999px;
     background: var(--muted-foreground);
-    transition: background 0.2s ease;
+    opacity: 0.55;
+    transition: background 0.2s ease, opacity 0.2s ease;
+  }
+
+  & > i:nth-child(1) {
+    height: 7px;
+  }
+
+  & > i:nth-child(2) {
+    height: 13px;
+  }
+
+  & > i:nth-child(3) {
+    height: 9px;
   }
 
   /* Na ligacao. Ver a nota sobre `data-` logo abaixo, no `reveal`. */
   &[data-live='true'] > i {
     background: var(--agent, var(--ok));
+    opacity: 0.9;
     animation: calling-wave1 0.8s ease-in-out infinite;
   }
 
@@ -220,27 +238,27 @@
 @keyframes calling-wave1 {
   0%,
   100% {
-    height: 5px;
+    height: 6px;
   }
   50% {
-    height: 13px;
+    height: 15px;
   }
 }
 
 @keyframes calling-wave2 {
   0%,
   100% {
-    height: 9px;
+    height: 10px;
   }
   50% {
-    height: 4px;
+    height: 18px;
   }
 }
 
 @keyframes calling-wave3 {
   0%,
   100% {
-    height: 6px;
+    height: 5px;
   }
   50% {
     height: 12px;

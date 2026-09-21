@@ -4,9 +4,8 @@
     {
       "name": "calling-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--workspace=web"],
-      "port": 5173,
-      "autoPort": true
+      "runtimeArgs": ["run", "dev", "--workspace=web", "--", "--port", "5199", "--strictPort"],
+      "port": 5199
     }
   ]
 }

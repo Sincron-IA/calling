@@ -139,6 +139,16 @@ function placeMain(width, height) {
   return { x: Math.round(x), y: Math.round(y), width: w, height: h }
 }
 
+/** Dois retangulos sao o mesmo, a menos do arredondamento de DPI do Windows. */
+function nearBounds(a, b) {
+  return (
+    Math.abs(a.x - b.x) <= 2 &&
+    Math.abs(a.y - b.y) <= 2 &&
+    Math.abs(a.width - b.width) <= 2 &&
+    Math.abs(a.height - b.height) <= 2
+  )
+}
+
 function applyMainBounds(bounds) {
   if (!mainWindow || mainWindow.isDestroyed()) return
   mainApplied = bounds
@@ -267,15 +277,23 @@ async function createWindow() {
   win.on('move', () => {
     if (win.isDestroyed()) return
     const bounds = win.getBounds()
-    if (
-      mainApplied &&
-      bounds.x === mainApplied.x &&
-      bounds.y === mainApplied.y &&
-      bounds.width === mainApplied.width &&
-      bounds.height === mainApplied.height
-    ) {
-      return
-    }
+
+    /*
+     * Foi a MAO do Luiz, ou fomos nos?
+     *
+     * `setBounds` tambem dispara `move`, e so o arrasto de verdade pode mexer
+     * na ancora. A comparacao era por igualdade exata nos quatro numeros — e o
+     * Windows devolve os nossos proprios valores com um pixel de diferenca
+     * quando ha escala de DPI. Um pixel bastava: o guarda falhava, a ancora era
+     * recalculada a partir da posicao ja deslocada, e o proximo
+     * redimensionamento saia daquele lugar novo. Com varios seguidos (o chip
+     * abrindo), a janela caminhava sozinha pela tela.
+     *
+     * Dois pixels de tolerancia separam o ruido de arredondamento de um arrasto
+     * (que move dezenas de pixels), e a janela para de andar.
+     */
+    if (mainApplied && nearBounds(bounds, mainApplied)) return
+
     mainAnchor = { x: bounds.x + bounds.width, y: bounds.y + bounds.height }
     // Arrastar a barra para o canto e justamente o que faz a engrenagem descer.
     emitMainEdge()
