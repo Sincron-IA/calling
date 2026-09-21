@@ -92,6 +92,17 @@ export function ConnectScreen({
   const [secret, setSecret] = useState(defaultSecret)
 
   /**
+   * Endereco e chave JA salvos ficam trancados.
+   *
+   * Quem volta aqui quase sempre quer so refazer o login do Cloudflare — e um
+   * campo aberto com a chave dentro e um jeito facil de estragar o que estava
+   * funcionando (um clique, um Ctrl+A, um caractere a mais). Editar e uma
+   * decisao explicita.
+   */
+  const [editing, setEditing] = useState(false)
+  const locked = !editing && defaultBridgeUrl.trim() !== '' && defaultSecret.trim() !== ''
+
+  /**
    * O clique JA conta como "estou indo".
    *
    * Quem sabe que a janela do Cloudflare abriu e o pai (`phase`), e isso demora
@@ -129,20 +140,84 @@ export function ConnectScreen({
           {statusLabel && <span className="connect__state">{statusLabel}</span>}
         </header>
 
-        {connected ? (
+        {connected && !editing ? (
           /* Nada a fazer aqui: endereco, chave e sessao do Cloudflare estao de
              pe. Fica so a linha que diz isso — e um caminho discreto para
              refazer o login, que e o unico motivo de alguem querer o
              formulario de volta com tudo funcionando. */
           <>
-            <p className="connect__hint">
-              Conectado ao Cloudflare.{' '}
-              {secretPersisted
-                ? 'O endereço e a chave já estão guardados.'
-                : 'O endereço já está guardado.'}
-            </p>
+            <p className="connect__hint">Conectado ao Cloudflare.</p>
+            {/* O que esta guardado fica a vista, trancado: quem abriu a
+                engrenagem quer CONFERIR o endereco e a chave muito mais vezes
+                do que quer troca-los. */}
+            <div className="connect__saved">
+              <div className="connect__row">
+                <span className="connect__label">Endereço do bridge</span>
+                <span className="connect__value" title={url}>
+                  {url}
+                </span>
+              </div>
+              <div className="connect__row">
+                <span className="connect__label">Chave do app</span>
+                {secretPersisted && secret ? (
+                  <span className="connect__value connect__value--mask">
+                    {'•'.repeat(Math.min(Math.max(secret.length, 8), 18))}
+                  </span>
+                ) : (
+                  <span className="connect__value connect__value--soft">
+                    não fica guardada nesta máquina
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                className="connect__link connect__edit"
+                onClick={() => setEditing(true)}
+                disabled={busy}
+              >
+                Editar
+              </button>
+            </div>
             <button className="connect__link" type="submit" disabled={busy}>
               Conectar de novo
+            </button>
+          </>
+        ) : locked ? (
+          /* O que esta guardado, a vista mas fora de alcance. O botao continua
+             sendo o mesmo: refazer o login do Cloudflare com isto aqui. */
+          <>
+            <div className="connect__saved">
+              <div className="connect__row">
+                <span className="connect__label">Endereço do bridge</span>
+                <span className="connect__value" title={url}>
+                  {url}
+                </span>
+              </div>
+              <div className="connect__row">
+                <span className="connect__label">Chave do app</span>
+                <span className="connect__value connect__value--mask">
+                  {'•'.repeat(Math.min(Math.max(secret.length, 8), 18))}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="connect__link connect__edit"
+                onClick={() => setEditing(true)}
+                disabled={busy}
+              >
+                Editar
+              </button>
+            </div>
+
+            <button
+              className="connect__button"
+              type="submit"
+              disabled={!ready || busy}
+              aria-busy={busy || undefined}
+              aria-live="polite"
+            >
+              {busy && <span className="connect__spinner" aria-hidden="true" />}
+              {busy ? (waiting ? 'Esperando o login…' : 'Abrindo…') : 'Conectar ao Cloudflare'}
             </button>
           </>
         ) : (
