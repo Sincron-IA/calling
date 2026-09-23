@@ -31,7 +31,7 @@ Nao pode ser a Gemini imitando a Automa a partir de um prompt generico.
       |  claude -p (headless), cwd = /home/dgclaw-<agente>
       v
 +---------------------------+
-|  Agente DG Claw real      |   <- AGENT.md, CLAUDE.md, MEMORY.md,
+|  Agente DG Claw real      |   <- AGENT.md, AGENTS.md, MEMORY.md,
 |  (Automa, Ivo, Theo...)   |      working-memory.md, Bash, ferramentas
 +---------------------------+
       |  texto da resposta
@@ -63,7 +63,7 @@ claude -p \
 
 Tres detalhes fazem isso funcionar:
 
-1. **`cwd` = o workspace do agente.** O Claude Code descobre o `CLAUDE.md`
+1. **`cwd` = o workspace do agente.** O Claude Code descobre o `AGENTS.md`
    daquele diretorio sozinho. E assim que o agente reencontra as regras de
    memoria dele e o caminho dos arquivos (`MEMORY.md`, `working-memory.md`).
 
@@ -87,7 +87,7 @@ comece com `-` nunca vira uma flag.
 ### E
 
 - O agente **de verdade**: mesma identidade (`AGENT.md`, com as leis e a
-  personalidade), mesmo `CLAUDE.md`, mesmo diretorio de trabalho.
+  personalidade), mesmo `AGENTS.md`, mesmo diretorio de trabalho.
 - **Mesma memoria em arquivo.** Ele le e escreve `working-memory.md` e
   `MEMORY.md` — os mesmos arquivos que a sessao do Telegram usa. Essa e a
   camada que de fato liga os dois mundos.
