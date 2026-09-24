@@ -79,6 +79,7 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
@@ -86,6 +87,7 @@ import { AgentAvatar, AgentAvatarStack } from './AgentAvatar'
 import { AgentPanel } from './AgentPanel'
 import type { AgentSummary } from './bridge'
 import { INCOMING_CALL_TIMEOUT_MS, type DeclineCause, type IncomingCall } from './incoming'
+import { isVoiceProvider, VOICE_PROVIDER_LABEL, type VoiceProvider } from './voice'
 
 /** Fase da ligacao que o Luiz fez (ou esta fazendo). */
 export type CallPhase = 'idle' | 'calling' | 'in-call'
@@ -228,6 +230,12 @@ export interface CallingBarProps {
    * de onde o painel sai.
    */
   onOpenConfig?: (anchor: { x: number; y: number; width: number; height: number } | null) => void
+  /**
+   * Camada de voz da proxima ligacao (Gemini ou GPT-Live). Sem o callback o
+   * seletor nem aparece — e a barra fica exatamente como era.
+   */
+  voiceProvider?: VoiceProvider
+  onVoiceProviderChange?: (provider: VoiceProvider) => void
 }
 
 /* ------------------------------------------------------------- utilidades -- */
@@ -552,6 +560,8 @@ export function CallingBar({
   onDismissMessage,
   onClearMessages,
   onOpenConfig,
+  voiceProvider = 'gemini',
+  onVoiceProviderChange,
 }: CallingBarProps) {
   // A barra esta aberta (mostrando nome, avatar e chevron). So o clique mexe.
   const [open, setOpen] = useState(false)
@@ -1133,6 +1143,41 @@ export function CallingBar({
                 })}
               </ItemGroup>
             </ScrollArea>
+
+            {/* A CAMADA DE VOZ da proxima ligacao. Em fluxo, no rodape do
+                menu (nada de Popover/DropdownMenu aqui — ver docs/SHADCN.md).
+                Nao mexe na ligacao em curso: por isso trava enquanto ha uma. */}
+            {onVoiceProviderChange && (
+              <>
+                <Separator />
+                <div className="flex h-9 items-center justify-between gap-2 px-2.5">
+                  <Eyebrow>Voz</Eyebrow>
+                  <ToggleGroup
+                    type="single"
+                    size="sm"
+                    variant="outline"
+                    spacing={0}
+                    value={voiceProvider}
+                    disabled={phase !== 'idle'}
+                    onValueChange={(value) => {
+                      // Clicar no ja escolhido devolve '': ignoramos, sempre ha um.
+                      if (isVoiceProvider(value)) onVoiceProviderChange(value)
+                    }}
+                    aria-label="Camada de voz da próxima ligação"
+                  >
+                    {(['gemini', 'openai-live'] as const).map((provider) => (
+                      <ToggleGroupItem
+                        key={provider}
+                        value={provider}
+                        className="h-6 px-2 text-[0.7rem]"
+                      >
+                        {VOICE_PROVIDER_LABEL[provider]}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </div>
+              </>
+            )}
           </Panel>
         )}
 

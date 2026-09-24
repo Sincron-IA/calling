@@ -6,7 +6,6 @@ import { XIcon } from 'lucide-react'
 import { AgentAvatar } from './AgentAvatar'
 import { isDesktopMainWindow } from './desktop'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { GeminiLiveOrbAdapter } from 'orb-ui/adapters'
 import {
   fetchAgents,
   endCall as endCallOnBridge,
@@ -15,7 +14,13 @@ import {
   BridgeUnreachableError,
   type AgentSummary,
 } from './bridge'
-import { createCallAdapter } from './gemini'
+import {
+  createVoiceAdapter,
+  readVoiceProvider,
+  saveVoiceProvider,
+  type CallAdapter,
+  type VoiceProvider,
+} from './voice'
 import { agentColor, pickPreferredAgent, registerCall } from './agents'
 import {
   CallingBar,
@@ -117,7 +122,16 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
   const [waiting, setWaiting] = useState(false)
   const [error, setError] = useState('')
 
-  const adapterRef = useRef<GeminiLiveOrbAdapter | null>(null)
+  const adapterRef = useRef<CallAdapter | null>(null)
+  // Camada de voz da PROXIMA ligacao. Padrao Gemini; a escolha fica no
+  // localStorage. A ligacao em curso nao muda — so a seguinte.
+  const [voiceProvider, setVoiceProvider] = useState<VoiceProvider>(readVoiceProvider)
+  const voiceProviderRef = useRef(voiceProvider)
+  const changeVoiceProvider = useCallback((next: VoiceProvider) => {
+    voiceProviderRef.current = next
+    setVoiceProvider(next)
+    saveVoiceProvider(next)
+  }, [])
   const callIdRef = useRef('')
   // Cada tentativa de ligacao ganha um numero. Se ele mudar no meio do caminho,
   // e porque o Luiz ja desligou ou trocou de agente: a tentativa antiga se apaga.
@@ -278,7 +292,7 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
     const callId = crypto.randomUUID()
     callIdRef.current = callId
 
-    const next = createCallAdapter(slug, callId, {
+    const next = createVoiceAdapter(voiceProviderRef.current, slug, callId, {
       onAgentReply: (text) => isCurrent() && setLastReply(text),
       onWaitingChange: (value) => isCurrent() && setWaiting(value),
       onError: (message) => isCurrent() && setError(message),
@@ -540,6 +554,8 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
         onDismissMessage={(id) => setMessages((queue) => queue.filter((item) => item.id !== id))}
         onClearMessages={() => setMessages([])}
         onOpenConfig={onOpenConfig}
+        voiceProvider={voiceProvider}
+        onVoiceProviderChange={changeVoiceProvider}
         compose={compose}
         onDraftChange={(draft) => setCompose((state) => ({ ...state, draft }))}
         onSendMessage={() => void sendCompose()}
