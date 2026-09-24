@@ -78,7 +78,7 @@ export interface LiveTokenResponse {
   config: Record<string, unknown>
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
+async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const res = await call(path, {
     method: 'POST',
     headers: {
@@ -86,6 +86,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
       authorization: `Bearer ${sharedSecret()}`,
     },
     body: JSON.stringify(body),
+    signal,
   })
 
   if (!res.ok) {
@@ -127,6 +128,27 @@ export async function fetchAgents(): Promise<AgentSummary[]> {
 /** Pede ao bridge um token efemero da Gemini Live, ja com a config da sessao. */
 export function createLiveToken(agentSlug: string): Promise<LiveTokenResponse> {
   return post<LiveTokenResponse>('/api/gemini-live-token', { agent: agentSlug })
+}
+
+/**
+ * O que o bridge devolve ao criar uma sessao GPT-Live: o formato exato que o
+ * `createSession` do `createOpenAILiveAdapter` (orb-ui 0.9) espera.
+ */
+export interface OpenAILiveSessionResponse {
+  session: { id: string }
+  transport: { type: 'webrtc'; sdp: string }
+}
+
+/**
+ * Troca o SDP offer do browser pelo SDP answer da GPT-Live. Quem fala com a
+ * OpenAI e o bridge: a OPENAI_API_KEY nunca chega aqui.
+ */
+export function createOpenAILiveSession(
+  agentSlug: string,
+  sdp: string,
+  signal?: AbortSignal,
+): Promise<OpenAILiveSessionResponse> {
+  return post<OpenAILiveSessionResponse>('/api/openai-live-session', { agent: agentSlug, sdp }, signal)
 }
 
 /** O mesmo teto do bridge — recusar aqui evita subir 2 MB para levar 413. */

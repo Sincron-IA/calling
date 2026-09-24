@@ -21,6 +21,7 @@ import {
 } from './auth.js'
 import { askAgent, drainCallTurns, endCall, sendText } from './claude.js'
 import { createLiveToken } from './gemini.js'
+import { createLiveSession, isPlausibleSdp } from './openai-live.js'
 import { completeEcho, echoToThread } from './telegram.js'
 import { backfillAvatars } from './telegram-avatar.js'
 import {
@@ -347,6 +348,56 @@ app.post('/api/gemini-live-token', requireSecret, async (req, res) => {
       `falha ao emitir token: ${(err as Error).message}`,
     )
     res.status(status).json({ error: 'Nao consegui iniciar a ligacao.' })
+  }
+})
+
+/**
+ * Sessao GPT-Live (OpenAI), a segunda opcao de camada de voz.
+ *
+ * O browser manda o SDP offer; o bridge cria a sessao com a OPENAI_API_KEY e
+ * devolve so `{ session: { id }, transport: { type, sdp } }`. Nada de SDP,
+ * chave ou transcricao entra no log — so agente, modelo e duracao.
+ */
+app.post('/api/openai-live-session', requireSecret, async (req, res) => {
+  const slug = String(req.body?.agent || '')
+  const agent = findAgent(slug)
+  if (!agent) {
+    logEvent(
+      'warn',
+      'openai_live_unknown_agent',
+      { agent: slug, origin: req.headers.origin ?? null },
+      `sessao GPT-Live pedida para agente desconhecido: "${slug}"`,
+    )
+    res.status(400).json({ error: 'Agente desconhecido.' })
+    return
+  }
+
+  const sdp = req.body?.sdp
+  if (!isPlausibleSdp(sdp)) {
+    res.status(400).json({ error: 'SDP offer ausente ou invalido.' })
+    return
+  }
+
+  const startedAt = Date.now()
+  try {
+    const session = await createLiveSession(agent, sdp)
+    // O id da sessao nao e credencial, mas tambem nao ajuda ninguem no log.
+    logEvent(
+      'info',
+      'openai_live_session_created',
+      { agent: agent.slug, model: session.model, ms: Date.now() - startedAt },
+      `sessao GPT-Live criada para ${agent.slug} (${session.model})`,
+    )
+    res.json({ session: session.session, transport: session.transport })
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500
+    logEvent(
+      'error',
+      'openai_live_session_failed',
+      { agent: agent.slug, status, error: (err as Error).message, ms: Date.now() - startedAt },
+      `falha ao criar sessao GPT-Live: ${(err as Error).message}`,
+    )
+    res.status(status).json({ error: 'Nao consegui iniciar a ligacao (GPT-Live).' })
   }
 })
 
