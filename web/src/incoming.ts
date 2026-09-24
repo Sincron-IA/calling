@@ -37,6 +37,13 @@ export interface IncomingCall {
 export type DeclineCause = 'manual' | 'timeout'
 
 /**
+ * O que se faz com um toque que ficou para depois (ja fora do tempo): o mesmo
+ * que com um toque vivo — so que a resposta chega ao agente por recado escrito,
+ * porque o `/api/ring` dele ja voltou.
+ */
+export type LateAction = 'approve' | 'answer' | 'decline'
+
+/**
  * Quanto tempo o toque fica de pe antes de virar recusa por falta de resposta.
  *
  * ATENCAO: o valor de verdade e o do servidor (RING_TIMEOUT_MS em
@@ -77,6 +84,25 @@ let source: EventSource | null = null
 
 /** Quem quer saber que a identidade de um agente mudou. */
 const agentsListeners = new Set<() => void>()
+
+/**
+ * TOQUE QUE NINGUEM ATENDEU NAO SOME.
+ *
+ * Passado o tempo (ou quando o agente desiste de esperar), o `/api/ring` dele
+ * volta com `no_answer` e o cartao sai da tela — mas o pedido continua sem
+ * resposta. Quem assina aqui recebe esse toque para guardar nas notificacoes,
+ * onde ele fica ate o Luiz aprovar, ligar ou recusar.
+ */
+type MissedListener = (call: IncomingCall) => void
+
+const missedListeners = new Set<MissedListener>()
+
+export function subscribeMissedCalls(listener: MissedListener): () => void {
+  missedListeners.add(listener)
+  return () => {
+    missedListeners.delete(listener)
+  }
+}
 
 /**
  * Um recado que o AGENTE empurrou, sem ninguem ter perguntado nada.
@@ -167,9 +193,14 @@ function ensureStream(): void {
   })
 
   es.addEventListener('resolved', (event) => {
-    const data = JSON.parse((event as MessageEvent).data) as { id: string }
+    const data = JSON.parse((event as MessageEvent).data) as { id: string; outcome?: string }
+    // Ninguem decidiu (tempo do servidor, ou o agente desistiu de esperar): o
+    // pedido vai para as notificacoes. Se ja tinha saido daqui — o relogio da
+    // propria barra chegou antes —, quem guardou foi ela.
+    const missed = data.outcome === 'no_answer' ? calls.find((call) => call.id === data.id) : undefined
     // Resolvida em outra aba, por voz, ou por tempo no servidor: some daqui.
     dismissIncoming(data.id)
+    if (missed) missedListeners.forEach((listener) => listener(missed))
   })
 
   es.onerror = () => {

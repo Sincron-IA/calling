@@ -25,9 +25,9 @@ if (isDesktop) document.documentElement.classList.add('desktop-window')
 // porque os componentes do shadcn a leem; os tokens ja valem sem ela.
 document.documentElement.classList.add('dark')
 
-// A janela principal, alem disso, veste o tamanho do conteudo: esta classe e o
-// que desliga o layout de tela cheia (o `100vh` e a barra grudada no canto da
-// viewport) que so faz sentido no navegador.
+// A janela principal, alem disso, e um retangulo transparente com o chip num
+// canto: esta classe e o que desliga o layout de tela cheia (fundo, barra
+// centralizada) que so faz sentido no navegador.
 if (isDesktopMainWindow) document.body.classList.add('desktop-main')
 
 // O painel da engrenagem tem o tamanho do cartao: nao ha pagina em volta dele.

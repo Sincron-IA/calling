@@ -70,7 +70,7 @@ export function ConfigPanel() {
   const [error, setError] = useState('')
   const [secretPersisted, setSecretPersisted] = useState(true)
   const [saved, setSaved] = useState({ bridgeUrl: DEFAULT_BRIDGE_URL, sharedSecret: '' })
-  const [prefs, setPrefs] = useState<AppPrefs>({ alwaysOnTop: false })
+  const [prefs, setPrefs] = useState<AppPrefs>({ alwaysOnTop: false, startWithWindows: false })
 
   const close = useCallback(() => void api.closeConfigPanel(), [api])
 
@@ -255,15 +255,23 @@ export function ConfigPanel() {
           <Field orientation="horizontal">
             <FieldContent>
               <FieldLabel htmlFor="always-on-top">Sempre no topo</FieldLabel>
-              <FieldDescription>
-                A barra fica por cima das outras janelas. A mesma opção está no
-                menu da bandeja.
-              </FieldDescription>
+              <FieldDescription>A barra fica por cima das outras janelas.</FieldDescription>
             </FieldContent>
             <Switch
               id="always-on-top"
               checked={prefs.alwaysOnTop}
               onCheckedChange={(value) => togglePref({ alwaysOnTop: value })}
+            />
+          </Field>
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldLabel htmlFor="start-with-windows">Iniciar com o Windows</FieldLabel>
+              <FieldDescription>O Calling sobe sozinho quando a máquina liga.</FieldDescription>
+            </FieldContent>
+            <Switch
+              id="start-with-windows"
+              checked={prefs.startWithWindows}
+              onCheckedChange={(value) => togglePref({ startWithWindows: value })}
             />
           </Field>
         </FieldGroup>

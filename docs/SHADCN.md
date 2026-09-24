@@ -293,8 +293,8 @@ preguiça:
 | `wave` | as três barrinhas do áudio: identidade visual, não componente |
 | `app-drag`, `app-no-drag` | `-webkit-app-region`: é Electron, não interface |
 
-Mais as regras de janela (transparência, `#root` do tamanho do conteúdo, a faixa
-de 8px que arrasta). Também Electron.
+Mais as regras de janela (transparência, o conteúdo encostado no canto do chip,
+a troca de lado com `.grow-down`/`.grow-right`). Também Electron.
 
 ### O placar, medido
 

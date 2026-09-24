@@ -13,9 +13,9 @@ do agente, ali na lista: e a acao mais cara que existe aqui (abre microfone,
 gasta token, interrompe quem esta do outro lado), entao ela nao e a que se
 acerta sem querer. E uma ligacao por vez.
 
-Nada abre no hover, de proposito: a janela nao tem moldura e veste o tamanho do
-conteudo, entao tudo o que abria so de passar o mouse fazia a janela mudar de
-tamanho debaixo do cursor. Clique abre, clique (ou Esc, ou clicar fora) fecha.
+Nada abre no hover, de proposito: clique abre, clique (ou Esc, ou clicar fora)
+fecha. A barra pode ser arrastada para qualquer canto: na metade de cima da tela
+o que abre desce, na metade da esquerda abre para a direita.
 
 A engrenagem no cabecalho da lista abre a configuracao: a conexao fica
 recolhida numa linha (ela so importa quando quebra) e ao lado dela ficam as
@@ -160,6 +160,11 @@ Desfechos possiveis: `approved` (resolveu no dedo, sem voz), `answered` (ele vai
 falar com voce por voz), `declined` (recusou) e `no_answer` (nao respondeu a
 tempo). O que fazer com cada um e **decisao do agente que ligou** — inclusive
 avisar no Telegram, que e trabalho dele, nao do Calling.
+
+O `no_answer` nao apaga o pedido: o cartao sai da tela, mas o toque fica nas
+notificacoes do app (o sino no chip) com Aprovar, Ligar e Recusar, ate o Luiz
+decidir. A decisao tardia chega ao agente como recado escrito
+(`Aprovado — sobre o seu toque das HH:MM ("..."), que eu nao vi a tempo.`).
 
 A identidade vem da **credencial**, nao de um nome declarado: o bridge descobre
 quem esta ligando pelo segredo apresentado, procurando entre os

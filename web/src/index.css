@@ -284,8 +284,8 @@
 /* As janelas do app de desktop                                              */
 /*                                                                           */
 /* Isto nao e componente nenhum: sao as regras de uma janela sem moldura,     */
-/* transparente e do tamanho do conteudo. Nenhum registro entrega isso        */
-/* porque nao e interface — e Electron.                                       */
+/* transparente e de tamanho fixo em volta do chip. Nenhum registro entrega   */
+/* isso porque nao e interface — e Electron.                                  */
 /* ======================================================================== */
 
 /*
@@ -313,9 +313,11 @@ body.desktop-panel {
 /*
  * A janela principal.
  *
- * Ela veste o TAMANHO DO CONTEUDO (o `DesktopGate` mede o `#root` e o Electron
- * reancora no canto da tela). Por isso aqui nada pode depender de `100vh` nem
- * da largura da janela — senao os dois encolheriam um ao outro sem parar.
+ * Tamanho FIXO, transparente, e o chip mora num canto dela. O que abre (a
+ * lista, os avisos, as notificacoes) cresce para dentro da janela, so com CSS
+ * — a janela nao muda de tamanho, entao nao ha quadro nenhum com o conteudo
+ * fora do lugar. A parte transparente deixa o clique passar (o `DesktopGate`
+ * diz ao Electron quando o cursor esta em cima de um `data-surface`).
  */
 body.desktop-main {
   /* A janela inteira, para haver o que distribuir. */
@@ -325,45 +327,75 @@ body.desktop-main {
   display: flex;
 
   /*
-   * O CONTEUDO MORA NO CANTO QUE NAO SE MEXE.
+   * O CONTEUDO MORA NO CANTO DO CHIP.
    *
-   * A janela e ancorada pelo canto de BAIXO A DIREITA: e esse canto que fica
-   * parado na tela quando ela muda de tamanho; os outros tres e que andam.
-   *
-   * O conteudo ficava encostado em cima e a esquerda — ou seja, justamente nos
-   * dois lados que se movem. Quando a janela cresce (e ela cresce com folga, de
-   * proposito, para nunca aparecer cortada), o canto de cima a esquerda dava um
-   * salto de 320px, e a barra ia junto: ela sumia para longe e voltava um
-   * instante depois, quando a folga era cortada. Era esse o "ela vem de algum
-   * lugar de longe".
-   *
-   * Encostada no canto de baixo a direita, ela nao anda mais: o que cresce e a
-   * parte transparente, para cima e para a esquerda, que e onde o menu e os
-   * avisos abrem.
+   * No repouso o chip fica no canto de BAIXO A DIREITA da tela, e as coisas
+   * abrem para cima e para a esquerda — o conteudo encosta no canto de baixo
+   * a direita da janela. `body` e uma linha flex: `align-items` e o eixo
+   * VERTICAL, `justify-content` o HORIZONTAL.
    */
   align-items: flex-end;
   justify-content: flex-end;
 
-  /* A janela ja tem o tamanho do conteudo: nao ha o que rolar, e uma barra de
-     rolagem de 15px aqui comeria justamente o conteudo que ela viria mostrar. */
+  /* Nada rola aqui: o que passa da janela e cortado na borda dela. */
   overflow: hidden;
 }
 
-/* A faixa de 8px em volta do conteudo e a unica alca da janela sem moldura —
-   sem ela nao haveria por onde arrastar. `flex: 0 0 auto` e o que impede a
-   janela e o conteudo de encolherem um ao outro sem parar. */
+/*
+ * A BARRA TROCA DE LADO.
+ *
+ * Quem decide e o processo principal, pela metade da tela onde o chip esta
+ * (`calling:main-edge`, e o `DesktopGate` poe as classes no `body`). Na metade
+ * de CIMA as coisas abrem para BAIXO; na da ESQUERDA, para a DIREITA. O
+ * conteudo troca de canto e a janela anda junto — o chip fica onde estava.
+ *
+ * (Antes so existia a virada vertical, e ela mexia no eixo errado: um
+ * `justify-content` numa linha flex move na HORIZONTAL, entao o chip seguia
+ * grudado embaixo numa janela que crescia para baixo — era o "puxando para
+ * baixo" de quem arrastava a barra ate o topo.)
+ */
+body.desktop-main.grow-down {
+  align-items: flex-start;
+}
+
+body.desktop-main.grow-right {
+  justify-content: flex-start;
+}
+
+/* A folga de 8px em volta do conteudo deixa a sombra dos cartoes caber na
+   janela. `flex: 0 0 auto` e o `#root` do tamanho do que tem dentro. */
 body.desktop-main #root {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
   gap: 8px;
   padding: 8px;
-  -webkit-app-region: drag;
+  transition: opacity 90ms ease-out;
 }
 
-/* O conteudo continua clicavel: so a faixa arrasta. */
-body.desktop-main #root > * {
-  -webkit-app-region: no-drag;
+/* A troca de lado no meio de um arrasto: some, vira, a janela anda, volta.
+   Sumir e na hora; voltar tem um fade curto. */
+body.desktop-main.edge-swap #root {
+  opacity: 0;
+  transition: none;
+}
+
+/* AS COLUNAS VIRAM JUNTO.
+   O chip e o ULTIMO filho da coluna (tudo que abre nasce acima dele). Com as
+   coisas abrindo para baixo, a coluna se inverte: o chip vai para o topo —
+   onde a janela esta presa — e o resto nasce abaixo dele. E com elas abrindo
+   para a direita, tudo encosta na esquerda, junto do chip. */
+body.desktop-main.grow-down .calling-stack {
+  flex-direction: column-reverse;
+}
+
+body.desktop-main.grow-right .calling-stack {
+  align-items: flex-start;
+}
+
+/* O cartao que nasce "subindo 4px" nasce descendo, quando abre para baixo. */
+body.desktop-main.grow-down .slide-in-from-bottom-1 {
+  --tw-enter-translate-y: calc(var(--spacing) * -1);
 }
 
 /* O painel da engrenagem: o cartao e a janela, entao ele ocupa tudo. */

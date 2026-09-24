@@ -51,10 +51,14 @@ Tres regras que custaram caro para descobrir, todas em `docs/SHADCN.md`:
 
 - **Nada de `Popover`, `DropdownMenu`, `Sheet` ou `sonner` na janela da barra.**
   Eles renderizam em portal no `body` E se posicionam com `position: absolute`.
-  A janela do Electron veste o tamanho do conteudo (o `DesktopGate` mede o
-  `#root`), e filho posicionado fora da caixa nao entra na medida do pai — a
-  janela nao cresce e o menu nasce cortado. Passar `container` no Portal nao
-  resolve. O que abre na barra fica EM FLUXO, na coluna.
+  A janela do Electron e transparente, de tamanho fixo, com o chip num canto
+  que TROCA conforme a metade da tela (`.grow-down`/`.grow-right`): o que esta
+  em fluxo na coluna vira junto, um portal posicionado nao. O que abre na barra
+  fica EM FLUXO, na coluna.
+- **Todo cartao da janela da barra tem `data-surface`.** A parte transparente
+  deixa o clique passar para o app de baixo; so o que tem `data-surface`
+  segura o mouse (`DesktopGate`). Cartao novo sem o atributo nao e clicavel.
+  Quem arrasta tem `data-drag-handle`; o que fica parado na tela, `data-anchor`.
 - **Utilidade escrita a mao nao pode ter par base/modificador em duas classes.**
   O Tailwind v4 reordena as utilidades por conta propria. Use
   `&[data-estado='true']` dentro da propria `@utility`.

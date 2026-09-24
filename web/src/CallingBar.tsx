@@ -13,14 +13,15 @@
  * coisas: renderiza num portal no `body` e se posiciona com `position:
  * absolute`. As duas quebram esta janela.
  *
- * A janela do app de desktop nao tem moldura e VESTE O TAMANHO DO CONTEUDO: o
- * `DesktopGate` mede o `#root` com `getBoundingClientRect()` e o Electron
- * reancora a janela no canto. Um portal sai do `#root`, e um filho posicionado
- * fora da caixa nao entra na medida do pai — nos dois casos a janela nao
- * cresce, e o menu nasce pintado FORA dela, cortado.
+ * A janela do app de desktop e transparente, de tamanho fixo, com o chip num
+ * canto — e esse canto troca conforme a metade da tela onde o chip esta (ver
+ * `.grow-down`/`.grow-right` no `index.css`). O que esta EM FLUXO nesta coluna
+ * vira junto de graca; um portal posicionado por coordenada nao vira, e ainda
+ * pode nascer para o lado de fora da janela, cortado. E a parte transparente
+ * deixa o clique passar: so o que tem `data-surface` segura o mouse.
  *
  * Entao o que abre aqui fica EM FLUXO, nesta coluna. O que e "componente
- * pronto" nao e o posicionamento — e o conteudo: `Item`, `ItemGroup`, `Empty`,
+ * pronto" nao e o posicionamento — e o conteudo: `Item`, `ItemGroup`,
  * `ScrollArea`, `Badge`, `Avatar`, `Button`, `InputGroup`, `Kbd`, `Spinner`,
  * `Alert`. O `className` cuida do layout, que e o que `className` deve fazer.
  *
@@ -57,7 +58,6 @@ import { Slot } from 'radix-ui'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
-import { Empty, EmptyDescription, EmptyHeader } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import {
   InputGroup,
@@ -85,7 +85,12 @@ import { cn } from '@/lib/utils'
 import { AgentAvatar, AgentAvatarStack } from './AgentAvatar'
 import { AgentPanel } from './AgentPanel'
 import type { AgentSummary } from './bridge'
-import { INCOMING_CALL_TIMEOUT_MS, type DeclineCause, type IncomingCall } from './incoming'
+import {
+  INCOMING_CALL_TIMEOUT_MS,
+  type DeclineCause,
+  type IncomingCall,
+  type LateAction,
+} from './incoming'
 
 /** Fase da ligacao que o Luiz fez (ou esta fazendo). */
 export type CallPhase = 'idle' | 'calling' | 'in-call'
@@ -145,6 +150,14 @@ export interface QueuedMessage {
   /** Quando chegou (ms). */
   at: number
   read: boolean
+  /**
+   * Um TOQUE que passou do tempo sem decisao — o agente pediu e ninguem
+   * respondeu. Este nao sai com o "Limpar" nem com um X: fica ate o Luiz
+   * aprovar, ligar ou recusar. `text` e o motivo do toque.
+   */
+  call?: IncomingCall
+  /** A decisao tardia esta indo para o agente (o recado ainda nao voltou). */
+  busy?: boolean
 }
 
 /**
@@ -208,14 +221,22 @@ export interface CallingBarProps {
   /** Aviso de que um agente mudou a si mesmo. */
   change?: AgentChange | null
   onChangeDone?: () => void
-  /** A fila de recados empurrados pelos agentes, do mais novo para o mais velho. */
+  /**
+   * As notificacoes, da mais nova para a mais velha: os recados que os
+   * agentes empurraram e os toques que ficaram sem resposta.
+   */
   messages?: QueuedMessage[]
-  /** A fila foi aberta: tudo o que estava nela conta como lido. */
+  /** As notificacoes foram abertas: tudo o que estava nelas conta como lido. */
   onMessagesRead?: () => void
   /** Tirar UM recado da fila. */
   onDismissMessage?: (id: string) => void
-  /** Esvaziar a fila. */
+  /** Esvaziar os recados (os toques pendentes ficam). */
   onClearMessages?: () => void
+  /**
+   * Decidir um toque que ficou para depois. `reply` e o recado escrito junto,
+   * como no cartao do toque vivo.
+   */
+  onResolveLate?: (item: QueuedMessage, action: LateAction, reply?: string) => void
   /**
    * Abrir o painel de conexao.
    *
@@ -233,7 +254,7 @@ export interface CallingBarProps {
 /* ------------------------------------------------------------- utilidades -- */
 
 /** Hora do recado na fila: so hora e minuto, que e o que ajuda a se localizar. */
-function formatClock(at: number): string {
+export function formatClock(at: number): string {
   const when = new Date(at)
   const hours = String(when.getHours()).padStart(2, '0')
   const minutes = String(when.getMinutes()).padStart(2, '0')
@@ -308,6 +329,8 @@ function Panel({
   const Comp = asChild ? Slot.Root : "div"
   return (
     <Comp
+      // Cartao segura o clique; a transparencia em volta deixa passar.
+      data-surface=""
       {...rest}
       className={cn(
         'bg-popover text-popover-foreground app-no-drag flex flex-col overflow-hidden rounded-xl border text-left shadow-2xl',
@@ -336,6 +359,183 @@ function PanelHead({ label, children }: { label: string; children?: ReactNode })
 
 /* ------------------------------------------------------ chamada recebida -- */
 
+/*
+ * O CAMPO DE RESPOSTA.
+ *
+ * Aprovar e recusar sao gestos mudos: o agente descobre o desfecho e nada
+ * mais. O teclado abre uma linha para o dono dizer POR QUE — e so isso vai
+ * junto na decisao. Atender por voz nao usa: ali ele responde falando.
+ *
+ * Mora aqui em cima porque serve a dois lugares: o cartao do toque vivo e o
+ * toque que ficou para depois, nas notificacoes.
+ */
+function useReplyDraft() {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const id = useId()
+  const ref = useRef<HTMLInputElement | null>(null)
+
+  // Abriu, o cursor ja esta la: o clique no teclado e o pedido de escrever, nao
+  // o pedido de ver um campo para depois clicar nele.
+  useEffect(() => {
+    if (open) ref.current?.focus()
+  }, [open])
+
+  /* O que segue com a decisao: so existe se o campo estiver ABERTO e com texto
+     de verdade. Fechado (ou vazio) o payload e exatamente o de sempre. */
+  const reply = open ? text.trim() || undefined : undefined
+
+  return { open, setOpen, text, setText, id, ref, reply }
+}
+
+type ReplyDraft = ReturnType<typeof useReplyDraft>
+
+/** O teclado que abre o campo. Some ate o mouse chegar no cartao. */
+function ReplyToggle({
+  draft,
+  agentName,
+  color,
+}: {
+  draft: ReplyDraft
+  agentName: string
+  color: string
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          /* Escondido ate o mouse chegar no CARTAO (nao no proprio botao — um
+             alvo invisivel nao se acha). Fade + escala de uma passada so: nada
+             aqui fica se mexendo sozinho. */
+          className={cn(
+            'transition-[opacity,transform,color] duration-200 ease-out focus-visible:scale-100 focus-visible:opacity-100',
+            'group-hover/incoming:scale-100 group-hover/incoming:opacity-100',
+            draft.open ? 'scale-100 opacity-100' : 'text-muted-foreground scale-[0.8] opacity-0',
+          )}
+          // Aceso na cor do agente — e so o traco do icone, sem chip atras.
+          style={draft.open ? { color } : undefined}
+          // `aria-pressed` e nao `aria-expanded`: o `ghost` pinta um fundo no
+          // expandido, e o desenho aprovado nao tem fundo nenhum.
+          aria-pressed={draft.open}
+          aria-controls={draft.id}
+          onClick={() => draft.setOpen((open) => !open)}
+          aria-label={`Escrever uma resposta para ${agentName}`}
+        >
+          <KeyboardIcon />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Responder por escrito</TooltipContent>
+    </Tooltip>
+  )
+}
+
+/**
+ * A linha de escrever.
+ *
+ * A ALTURA E ANIMADA PELO GRID. `0fr` -> `1fr` deixa o proprio conteudo dizer o
+ * tamanho, sem pulo e sem ninguem medindo pixel em JS. O filho precisa de
+ * `min-h-0` + `overflow-hidden`, senao ele nao aceita ser espremido ate zero.
+ */
+function ReplyField({
+  draft,
+  agentName,
+  className,
+}: {
+  draft: ReplyDraft
+  agentName: string
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'grid transition-[grid-template-rows] duration-200 ease-out',
+        draft.open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+      )}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <div className={className}>
+          <Label htmlFor={draft.id} className="sr-only">
+            Resposta para {agentName}
+          </Label>
+          <Input
+            id={draft.id}
+            ref={draft.ref}
+            value={draft.text}
+            onChange={(event) => draft.setText(event.target.value)}
+            placeholder="Escreva algo pro agente"
+            // Fechado ele continua no layout (e o que da a animacao), entao sai
+            // da ordem do Tab para nao virar uma parada invisivel.
+            tabIndex={draft.open ? undefined : -1}
+            maxLength={500}
+            className="h-7 text-[0.8rem]"
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Aprovar (o gesto principal), atender por voz e recusar. */
+function DecisionButtons({
+  agentName,
+  busy = false,
+  declineHint,
+  onApprove,
+  onAnswer,
+  onDecline,
+  className,
+}: {
+  agentName: string
+  /** A decisao esta a caminho: nada aqui aceita um segundo clique. */
+  busy?: boolean
+  declineHint: string
+  onApprove: () => void
+  onAnswer: () => void
+  onDecline: () => void
+  className?: string
+}) {
+  return (
+    <div className={cn('flex items-center gap-1', className)}>
+      <Button size="sm" className="flex-1" onClick={onApprove} disabled={busy}>
+        {busy ? <Spinner data-icon="inline-start" /> : <CheckIcon data-icon="inline-start" />}
+        Aprovar
+      </Button>
+      <ButtonGroup>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              onClick={onAnswer}
+              disabled={busy}
+              aria-label={`Atender ${agentName} por voz`}
+            >
+              <PhoneIcon />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Atender por voz</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              onClick={onDecline}
+              disabled={busy}
+              aria-label={`Recusar o pedido de ${agentName}`}
+            >
+              <XIcon />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{declineHint}</TooltipContent>
+        </Tooltip>
+      </ButtonGroup>
+    </div>
+  )
+}
+
 interface IncomingCardProps {
   call: IncomingCall
   agentName: string
@@ -359,31 +559,16 @@ function IncomingCard({
   onDecline,
   inline = false,
 }: IncomingCardProps) {
-  /* O CAMPO DE RESPOSTA.
-     Aprovar e recusar sao gestos mudos: o agente descobre o desfecho e nada
-     mais. O teclado abre uma linha para o dono dizer POR QUE — e so isso vai
-     junto na decisao. Atender por voz nao usa: ali ele responde falando. */
-  const [replyOpen, setReplyOpen] = useState(false)
-  const [replyText, setReplyText] = useState('')
-  const replyId = useId()
-  const replyRef = useRef<HTMLInputElement | null>(null)
-
-  // Abriu, o cursor ja esta la: o clique no teclado e o pedido de escrever, nao
-  // o pedido de ver um campo para depois clicar nele.
-  useEffect(() => {
-    if (replyOpen) replyRef.current?.focus()
-  }, [replyOpen])
-
-  /* O que segue com a decisao: so existe se o campo estiver ABERTO e com texto
-     de verdade. Fechado (ou vazio) o payload e exatamente o de sempre. */
-  const reply = replyOpen ? replyText.trim() || undefined : undefined
+  const draft = useReplyDraft()
+  const { reply } = draft
 
   // Handler isolado de proposito: se um dia o "Aprovar" precisar de confirmacao
   // (duplo clique, undo), e aqui dentro que ela entra, sem mexer no resto.
   const approve = useCallback(() => onApprove(call, reply), [onApprove, call, reply])
 
-  // Quanto ainda falta para o toque morrer sozinho. Quem manda e o SERVIDOR
-  // (`expiresAt`); a constante local so cobre o caso de ele nao ter mandado.
+  // Quanto ainda falta para o toque sair daqui e ir para as notificacoes. Quem
+  // manda e o SERVIDOR (`expiresAt`); a constante local so cobre o caso de ele
+  // nao ter mandado.
   const expiresAt = call.expiresAt ?? call.receivedAt + INCOMING_CALL_TIMEOUT_MS
   const left = Math.max(0, expiresAt - Date.now())
 
@@ -391,6 +576,8 @@ function IncomingCard({
     <Panel
       role="group"
       aria-label={`Chamada de ${agentName}`}
+      // Sozinho, o cartao e o que ocupa o lugar do chip: fica parado no canto.
+      data-anchor={inline ? undefined : ''}
       className={cn('group/incoming', !inline && 'ring-1', RAIL)}
       style={
         {
@@ -406,7 +593,12 @@ function IncomingCard({
         } as CSSProperties
       }
     >
-      <Item size="sm" className="border-0">
+      {/* O cabecalho e a alca: sozinho, o cartao arrasta a barra. */}
+      <Item
+        size="sm"
+        className={cn('border-0', !inline && 'cursor-move')}
+        data-drag-handle={inline ? undefined : ''}
+      >
         <ItemMedia>
           <AgentAvatar name={agentName} color={color} src={avatar} size={24} />
         </ItemMedia>
@@ -414,108 +606,98 @@ function IncomingCard({
           <ItemTitle style={{ color }}>{agentName}</ItemTitle>
         </ItemContent>
         <ItemActions>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                /* Escondido ate o mouse chegar no CARTAO (nao no proprio
-                   botao — um alvo invisivel nao se acha). Fade + escala de uma
-                   passada so: nada aqui fica se mexendo sozinho. */
-                className={cn(
-                  'transition-[opacity,transform,color] duration-200 ease-out focus-visible:scale-100 focus-visible:opacity-100',
-                  'group-hover/incoming:scale-100 group-hover/incoming:opacity-100',
-                  replyOpen ? 'scale-100 opacity-100' : 'text-muted-foreground scale-[0.8] opacity-0',
-                )}
-                // Aceso na cor do agente — e so o traco do icone, sem chip atras.
-                style={replyOpen ? { color } : undefined}
-                // `aria-pressed` e nao `aria-expanded`: o `ghost` pinta um fundo
-                // no expandido, e o desenho aprovado nao tem fundo nenhum.
-                aria-pressed={replyOpen}
-                aria-controls={replyId}
-                onClick={() => setReplyOpen((open) => !open)}
-                aria-label={`Escrever uma resposta para ${agentName}`}
-              >
-                <KeyboardIcon />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Responder por escrito</TooltipContent>
-          </Tooltip>
+          <ReplyToggle draft={draft} agentName={agentName} color={color} />
         </ItemActions>
       </Item>
 
       <p className="text-foreground px-3 pb-2.5 text-sm leading-snug">{call.reason}</p>
 
-      {/* A ALTURA E ANIMADA PELO GRID.
-          `0fr` -> `1fr` deixa o proprio conteudo dizer o tamanho, e o cartao
-          (e a janela, que veste o conteudo) cresce junto, sem pulo e sem
-          ninguem medindo pixel em JS. O filho precisa de `min-h-0` +
-          `overflow-hidden`, senao ele nao aceita ser espremido ate zero. */}
-      <div
-        className={cn(
-          'grid transition-[grid-template-rows] duration-200 ease-out',
-          replyOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
-        )}
-      >
-        <div className="min-h-0 overflow-hidden">
-          <div className="px-2.5 pb-2.5">
-            <Label htmlFor={replyId} className="sr-only">
-              Resposta para {agentName}
-            </Label>
-            <Input
-              id={replyId}
-              ref={replyRef}
-              value={replyText}
-              onChange={(event) => setReplyText(event.target.value)}
-              placeholder="Escreva algo pro agente"
-              // Fechado ele continua no layout (e o que da a animacao), entao
-              // sai da ordem do Tab para nao virar uma parada invisivel.
-              tabIndex={replyOpen ? undefined : -1}
-              maxLength={500}
-              className="h-7 text-[0.8rem]"
-            />
-          </div>
-        </div>
-      </div>
+      <ReplyField draft={draft} agentName={agentName} className="px-2.5 pb-2.5" />
 
-      <div className="flex items-center gap-1 px-2.5 pb-2.5">
-        <Button size="sm" className="flex-1" onClick={approve}>
-          <CheckIcon data-icon="inline-start" />
-          Aprovar
-        </Button>
-        <ButtonGroup>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={() => onAnswer(call)}
-                aria-label={`Atender ${agentName} por voz`}
-              >
-                <PhoneIcon />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Atender por voz</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={() => onDecline(call, 'manual', reply)}
-                aria-label={`Recusar a chamada de ${agentName}`}
-              >
-                <XIcon />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Recusar — cai para o Telegram</TooltipContent>
-          </Tooltip>
-        </ButtonGroup>
-      </div>
+      <DecisionButtons
+        agentName={agentName}
+        declineHint="Recusar — cai para o Telegram"
+        onApprove={approve}
+        onAnswer={() => onAnswer(call)}
+        onDecline={() => onDecline(call, 'manual', reply)}
+        className="px-2.5 pb-2.5"
+      />
 
-      {/* O toque nao fica de pe para sempre, e o filete diz quanto falta. */}
+      {/* O toque nao fica de pe para sempre, e o filete diz quanto falta para
+          ele ir para as notificacoes. */}
       <Timer key={call.id} ms={left} color={color} />
     </Panel>
+  )
+}
+
+/* ----------------------------------------------- toque que ficou pendente -- */
+
+/**
+ * Um toque que passou do tempo sem ninguem decidir.
+ *
+ * O `/api/ring` do agente ja voltou com `no_answer` — ele seguiu a vida e
+ * talvez tenha perguntado no Telegram. Mas o pedido continua valendo, e some
+ * da tela era perder o pedido. Aqui ele fica com as mesmas tres saidas do
+ * cartao vivo; a decisao chega ao agente por recado escrito (quem monta o
+ * texto e o `App`).
+ */
+function LateCallItem({
+  item,
+  agentName,
+  color,
+  avatar = '',
+  onResolve,
+}: {
+  item: QueuedMessage
+  agentName: string
+  color: string
+  avatar?: string
+  onResolve?: (item: QueuedMessage, action: LateAction, reply?: string) => void
+}) {
+  const draft = useReplyDraft()
+  const busy = item.busy === true
+
+  return (
+    <Item
+      size="sm"
+      className="group/incoming items-start border-0"
+      role="group"
+      aria-label={`Pedido de ${agentName} esperando resposta`}
+      aria-busy={busy}
+    >
+      <ItemMedia className="pt-0.5">
+        <AgentAvatar name={agentName} color={color} src={avatar} size={20} />
+      </ItemMedia>
+      <ItemContent className="min-w-0 flex-1 gap-1">
+        <ItemTitle className="gap-1.5">
+          <span style={{ color }}>{agentName}</span>
+          <span className="text-muted-foreground font-mono text-[0.625rem] font-normal tabular-nums">
+            {formatClock(item.at)}
+          </span>
+          <Badge
+            variant="outline"
+            className="h-4 px-1.5 text-[0.625rem] font-normal"
+            style={{ borderColor: `color-mix(in oklch, ${color}, transparent 60%)` }}
+          >
+            esperando você
+          </Badge>
+        </ItemTitle>
+        <ItemDescription className="text-foreground line-clamp-none">{item.text}</ItemDescription>
+        <ReplyField draft={draft} agentName={agentName} className="pt-1" />
+        <DecisionButtons
+          agentName={agentName}
+          busy={busy}
+          declineHint="Recusar — ele fica sabendo por escrito"
+          onApprove={() => onResolve?.(item, 'approve', draft.reply)}
+          onAnswer={() => onResolve?.(item, 'answer')}
+          onDecline={() => onResolve?.(item, 'decline', draft.reply)}
+          className="pt-1"
+        />
+      </ItemContent>
+      <ItemActions className="self-start">
+        <ReplyToggle draft={draft} agentName={agentName} color={color} />
+      </ItemActions>
+    </Item>
   )
 }
 
@@ -551,6 +733,7 @@ export function CallingBar({
   onMessagesRead,
   onDismissMessage,
   onClearMessages,
+  onResolveLate,
   onOpenConfig,
 }: CallingBarProps) {
   // A barra esta aberta (mostrando nome, avatar e chevron). So o clique mexe.
@@ -562,7 +745,7 @@ export function CallingBar({
   const [hintOpen, setHintOpen] = useState(false)
   // Slug do agente cuja aparencia esta aberta para edicao. Vazio = nenhum.
   const [editFor, setEditFor] = useState('')
-  // A fila de recados esta aberta.
+  // As notificacoes estao abertas.
   const [queueOpen, setQueueOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<HTMLTextAreaElement>(null)
@@ -605,7 +788,12 @@ export function CallingBar({
 
   /* Clicar fora, ou o Esc, fecha tudo o que esta aberto — a lista, a pilha de
      chamadas e a propria barra. Como agora e o clique que abre, tem que haver
-     um clique que feche sem exigir mira no mesmo alvo de novo. */
+     um clique que feche sem exigir mira no mesmo alvo de novo.
+
+     No app de desktop o "fora" quase sempre e OUTRO app: a parte transparente
+     da janela deixa o clique passar, e ele nunca chega aqui. O que chega e a
+     janela perdendo o foco — e ai fecham a lista e a pilha. A barra aberta
+     fica: ela nao cobre nada, e e nela que o agente do chip aparece. */
   useEffect(() => {
     if (!menuOpen && !stackOpen && !open) return
     const closeAll = () => {
@@ -619,11 +807,17 @@ export function CallingBar({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeAll()
     }
+    const onBlur = () => {
+      setMenuOpen(false)
+      setStackOpen(false)
+    }
     window.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('blur', onBlur)
     return () => {
       window.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('blur', onBlur)
     }
   }, [menuOpen, stackOpen, open])
 
@@ -693,9 +887,7 @@ export function CallingBar({
     if (composeFor) draftRef.current?.focus()
   }, [composeFor])
 
-  /* O campo acompanha o texto ate um teto; passado ele, rola por dentro. A
-     janela do app cresce junto, que e o comportamento que se espera de um
-     widget do tamanho do conteudo. */
+  /* O campo acompanha o texto ate um teto; passado ele, rola por dentro. */
   useEffect(() => {
     const el = draftRef.current
     if (!el) return
@@ -705,11 +897,27 @@ export function CallingBar({
 
   const unread = useMemo(() => messages.filter((m) => !m.read).length, [messages])
 
-  const openQueue = useCallback(() => {
+  /* As notificacoes em dois grupos: primeiro o que ESPERA uma decisao (os
+     toques que ficaram para depois), depois os recados. Cada grupo do mais
+     novo para o mais velho, que e a ordem em que chegam. */
+  const pending = useMemo(() => messages.filter((m) => m.call), [messages])
+  const plain = useMemo(() => messages.filter((m) => !m.call), [messages])
+
+  /* O sino fica aceso na cor de quem pede atencao: o recado novo mais
+     recente, ou — sem nada novo — o toque mais recente ainda esperando. */
+  const alertFrom = messages.find((m) => !m.read) ?? pending[0]
+
+  const toggleQueue = useCallback(() => {
     setMenuOpen(false)
-    setQueueOpen(true)
-    onMessagesRead?.()
-  }, [onMessagesRead])
+    // Abrir e ler: tudo o que estava ali conta como visto.
+    if (!queueOpen) onMessagesRead?.()
+    setQueueOpen(!queueOpen)
+  }, [queueOpen, onMessagesRead])
+
+  // Esvaziou (tudo decidido, tudo limpo): nao ha o que mostrar aberto.
+  useEffect(() => {
+    if (messages.length === 0) setQueueOpen(false)
+  }, [messages.length])
 
   const callAgent = useCallback(
     (slug: string) => {
@@ -745,8 +953,11 @@ export function CallingBar({
   const active = phase !== 'idle'
   const ringing = incoming.length > 0
 
-  /** A coluna. Alinhada a direita, de baixo para cima. */
-  const column = 'flex flex-col items-end gap-2'
+  /* A coluna. Alinhada a direita, de baixo para cima — com o chip na metade de
+     cima (ou da esquerda) da tela, o `.grow-down` (`.grow-right`) do
+     `index.css` inverte o sentido (ver `DesktopGate`). A classe
+     `calling-stack` e o gancho dessas regras; nao estiliza nada sozinha. */
+  const column = 'calling-stack flex flex-col items-end gap-2'
 
   /* ---- 1 chamada recebida: o cartao destacado, com o brilho pulsando ---- */
   if (ringing && incoming.length === 1) {
@@ -776,7 +987,9 @@ export function CallingBar({
       <TooltipProvider delayDuration={300}>
         <div className={column} ref={rootRef}>
           {stackOpen && (
-            <ScrollArea className={cn('max-h-105', RAIL)}>
+            // A lista inteira segura o mouse, frestas incluidas: e nela que a
+            // roda rola.
+            <ScrollArea className={cn('max-h-105', RAIL)} data-surface="">
               <div className={cn(column, 'pr-1')} role="list">
                 {stack.map((call) => (
                   <div role="listitem" key={call.id}>
@@ -796,9 +1009,14 @@ export function CallingBar({
             </ScrollArea>
           )}
 
+          {/* No lugar do chip: segura o mouse, fica parado no canto e arrasta
+              a barra (o clique so abre se o cursor nao andou). */}
           <Button
             variant="outline"
             className="app-no-drag bg-popover h-11 rounded-full pr-3.5 pl-2.5 shadow-2xl"
+            data-surface=""
+            data-anchor=""
+            data-drag-handle=""
             onClick={() => setStackOpen((open) => !open)}
             aria-expanded={stackOpen}
             aria-label={`${incoming.length} agentes chamando`}
@@ -999,34 +1217,8 @@ export function CallingBar({
                 </Tooltip>
               )}
 
-              {/* A fila de recados. Discreta: so o sininho, com a conta quando
-                  ha coisa nova. Some quando nunca houve recado. */}
-              {messages.length > 0 && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      className="relative"
-                      onClick={openQueue}
-                      aria-label={
-                        unread > 0 ? `Recados dos agentes (${unread} novos)` : 'Recados dos agentes'
-                      }
-                    >
-                      <BellIcon />
-                      {unread > 0 && (
-                        <Badge
-                          variant="default"
-                          className="absolute -top-1 -right-1 size-3.5 justify-center rounded-full p-0 text-[0.5rem] tabular-nums"
-                        >
-                          {unread > 9 ? '9+' : unread}
-                        </Badge>
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Recados dos agentes</TooltipContent>
-                </Tooltip>
-              )}
+              {/* O sino morava aqui, e so aparecia com a lista aberta. Agora ele
+                  mora no proprio chip, de pe enquanto houver notificacao. */}
 
               <Button
                 variant="ghost"
@@ -1136,29 +1328,25 @@ export function CallingBar({
           </Panel>
         )}
 
-        {/* A FILA DE RECADOS.
+        {/* AS NOTIFICACOES.
             O balao mostra o mais novo e sai sozinho; aqui fica tudo o que
-            chegou enquanto ninguem estava olhando. */}
+            chegou enquanto ninguem estava olhando — os recados e, primeiro, os
+            toques que passaram do tempo e ainda esperam uma decisao. */}
         {queueOpen && (
-          <Panel role="dialog" aria-label="Recados dos agentes">
-            <PanelHead label="Recados">
-              {messages.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => {
-                    onClearMessages?.()
-                    setQueueOpen(false)
-                  }}
-                >
-                  Limpar
+          <Panel role="dialog" aria-label="Notificações">
+            <PanelHead label="Notificações">
+              {/* Limpar leva so os recados: pedido esperando decisao nao se
+                  apaga, se decide. */}
+              {plain.length > 0 && (
+                <Button variant="ghost" size="xs" onClick={() => onClearMessages?.()}>
+                  {pending.length > 0 ? 'Limpar recados' : 'Limpar'}
                 </Button>
               )}
               <Button
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => setQueueOpen(false)}
-                aria-label="Fechar os recados"
+                aria-label="Fechar as notificações"
               >
                 <XIcon />
               </Button>
@@ -1166,16 +1354,27 @@ export function CallingBar({
 
             <Separator />
 
-            {messages.length === 0 ? (
-              <Empty className="py-8">
-                <EmptyHeader>
-                  <EmptyDescription>Nenhum recado por enquanto.</EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              <ScrollArea className="max-h-80">
+            <ScrollArea className="max-h-100">
+              {pending.length > 0 && (
                 <ItemGroup className="p-1">
-                  {messages.map((message) => (
+                  {pending.map((item) => (
+                    <LateCallItem
+                      key={item.id}
+                      item={item}
+                      agentName={nameOf(item.agentSlug)}
+                      color={colorOf(item.agentSlug)}
+                      avatar={avatarOf?.(item.agentSlug)}
+                      onResolve={onResolveLate}
+                    />
+                  ))}
+                </ItemGroup>
+              )}
+
+              {pending.length > 0 && plain.length > 0 && <Separator />}
+
+              {plain.length > 0 && (
+                <ItemGroup className="p-1">
+                  {plain.map((message) => (
                     <Item key={message.id} size="sm" className="items-start border-0">
                       <ItemMedia className="pt-0.5">
                         <AgentAvatar
@@ -1209,8 +1408,8 @@ export function CallingBar({
                     </Item>
                   ))}
                 </ItemGroup>
-              </ScrollArea>
-            )}
+              )}
+            </ScrollArea>
           </Panel>
         )}
 
@@ -1276,46 +1475,46 @@ export function CallingBar({
               </span>
             </div>
 
+            {/* Uma linha so, e ela esta SEMPRE no layout — ora com o lembrete,
+                ora com o "esta pensando", ora vazia. Se ela entrasse e saisse,
+                a janela (que tem o tamanho do conteudo) pularia a cada passada
+                do mouse pelo `i`. Fica DENTRO do card, mas fora da caixa
+                cinza do campo — cada uma com o fundo que e dela. */}
+            <div
+              className={cn(
+                'text-muted-foreground flex h-6 items-center gap-2 px-2.5 text-[0.625rem] transition-opacity',
+                compose.busy || hintOpen ? 'opacity-100' : 'opacity-0',
+              )}
+            >
+              {compose.busy ? (
+                <>
+                  <Spinner className="size-3" />
+                  <span>{nameOf(composeFor)} está pensando</span>
+                </>
+              ) : (
+                /* O `Kbd` nasce `h-5 text-xs`: do tamanho exato da linha, e
+                   maior que o texto ao lado dele. Aqui ele encolhe, para caber
+                   na coluna de 272px sem empurrar nada para fora. */
+                <>
+                  <KbdGroup>
+                    <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Enter</Kbd>
+                    <span>manda</span>
+                  </KbdGroup>
+                  <KbdGroup>
+                    <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Shift+Enter</Kbd>
+                    <span>linha</span>
+                  </KbdGroup>
+                  <KbdGroup>
+                    <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Esc</Kbd>
+                    <span>fecha</span>
+                  </KbdGroup>
+                </>
+              )}
+            </div>
+
             {/* O campo alinha a borda dele com o texto do cabecalho. */}
             <div className="px-2.5 pb-2.5">
               <InputGroup>
-                {/* A LINHA DO TOPO MORA DENTRO DA CAIXA — e do shadcn pronto
-                    (`align="block-start"`), nao um bloco solto por cima.
-                    SEMPRE no layout — ora com o lembrete, ora com o "esta
-                    pensando", ora vazia — senao a janela (que tem o tamanho do
-                    conteudo) pularia a cada passada do mouse pelo `i`. */}
-                <InputGroupAddon
-                  align="block-start"
-                  className={cn(
-                    'text-muted-foreground h-6 gap-2 text-[0.625rem] transition-opacity',
-                    compose.busy || hintOpen ? 'opacity-100' : 'opacity-0',
-                  )}
-                >
-                  {compose.busy ? (
-                    <>
-                      <Spinner className="size-3" />
-                      <span>{nameOf(composeFor)} está pensando</span>
-                    </>
-                  ) : (
-                    /* O `Kbd` nasce `h-5 text-xs`: do tamanho exato da linha, e
-                       maior que o texto ao lado dele. Aqui ele encolhe, para caber
-                       na coluna de 272px sem empurrar nada para fora. */
-                    <>
-                      <KbdGroup>
-                        <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Enter</Kbd>
-                        <span>manda</span>
-                      </KbdGroup>
-                      <KbdGroup>
-                        <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Shift+Enter</Kbd>
-                        <span>linha</span>
-                      </KbdGroup>
-                      <KbdGroup>
-                        <Kbd className="h-4 min-w-4 px-1 text-[0.625rem]">Esc</Kbd>
-                        <span>fecha</span>
-                      </KbdGroup>
-                    </>
-                  )}
-                </InputGroupAddon>
                 <InputGroupTextarea
                   ref={draftRef}
                   rows={1}
@@ -1363,37 +1562,77 @@ export function CallingBar({
         {/* ------------------------------------------------------- O CHIP --
             DOIS ESTADOS, E ELE SALTA ENTRE OS DOIS.
 
-            Antes o avatar, a alca e o nome cresciam de zero ate a largura
-            deles em 240ms. Numa janela que veste o conteudo, animar o TAMANHO
-            e uma briga que a janela sempre perde: ela chega alguns quadros
-            depois e, nesse meio tempo, corta o que ha dentro — a barra piscava
-            aumentando e diminuindo o tempo todo.
+            Ou aparece, ou nao aparece: animar o TAMANHO do chip era o que
+            fazia a barra piscar, no tempo em que a janela corria atras dele.
 
-            Agora ou aparece, ou nao aparece. A janela muda de tamanho UMA vez
-            por gesto, e ja no tamanho final: nao ha o que perseguir.
+            A ALTURA nao muda nunca (`h-11`), mesmo com o chip vazio.
 
-            A ALTURA nao muda nunca (`h-11`), mesmo com o chip vazio: assim o
-            unico eixo que se mexe no hover e a largura. */}
+            O chip inteiro e a alca (`data-drag-handle`): segurou e andou, e
+            arrasto — ate em cima das barrinhas ou do avatar. Clicou sem andar,
+            e o clique de sempre. E ele e a ancora (`data-anchor`): o ponto que
+            fica parado na tela quando o resto troca de lado. */}
         <div
+          data-surface=""
+          data-anchor=""
+          data-drag-handle=""
           className={cn(
-            'app-drag relative flex h-11 cursor-move items-center rounded-full border px-3 transition-colors',
-            open || active ? 'border-border' : 'border-transparent',
+            'relative flex h-11 cursor-move items-center rounded-full border px-3 transition-colors',
+            open || active || messages.length > 0 ? 'border-border' : 'border-transparent',
             open
               ? 'bg-popover/90 shadow-2xl backdrop-blur-sm'
-              : active
+              : active || messages.length > 0
                 ? 'bg-muted/60'
                 : 'bg-transparent',
           )}
           style={{ '--agent': currentColor } as CSSProperties}
         >
+          {/* O SINO FICA DE PE ENQUANTO HOUVER NOTIFICACAO.
+              Antes era um ponto que sumia assim que a fila era aberta — e com
+              ele sumia a lembranca de que havia coisa ali, inclusive pedido
+              esperando decisao. Agora ele so sai quando a fila esvazia: aceso
+              na cor de quem pede atencao (recado novo ou toque pendente), apagado
+              quando tudo ja foi visto. Um clique abre as notificacoes. */}
+          {messages.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="relative mr-1.5 -ml-1.5 rounded-full"
+                  style={alertFrom ? { color: colorOf(alertFrom.agentSlug) } : undefined}
+                  onClick={toggleQueue}
+                  aria-expanded={queueOpen}
+                  aria-label={
+                    unread > 0
+                      ? `Notificações (${unread} ${unread === 1 ? 'nova' : 'novas'})`
+                      : 'Notificações'
+                  }
+                >
+                  <BellIcon />
+                  {unread > 0 && (
+                    <Badge
+                      className="absolute -top-1 -right-1 size-3.5 justify-center rounded-full p-0 text-[0.5rem] tabular-nums"
+                      style={{
+                        background: colorOf(alertFrom?.agentSlug ?? messages[0].agentSlug),
+                        color: 'var(--primary-foreground)',
+                      }}
+                    >
+                      {unread > 9 ? '9+' : unread}
+                    </Badge>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {pending.length > 0
+                  ? `Notificações · ${pending.length} esperando você`
+                  : 'Notificações'}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
           {/* AS BARRINHAS SAO O BOTAO.
               Elas sao a unica coisa que existe com a barra fechada, entao sao
-              elas que abrem — e fecham. Precisam ser `no-drag`: no Windows uma
-              area de arrasto engole o clique inteiro.
-
-              O que sobra em volta delas (a folga do `px-3` dos lados e os 13px
-              de cada lado dentro da altura de 44px) continua sendo arrasto, e e
-              por ali que a janela se pega. */}
+              elas que abrem — e fecham. */}
           <button
             type="button"
             className="app-no-drag focus-visible:ring-ring cursor-pointer rounded focus-visible:ring-2 focus-visible:outline-none"
@@ -1408,9 +1647,7 @@ export function CallingBar({
             </span>
           </button>
 
-          {/* O NOME (e o cronometro) ficam EM FLUXO, dentro do chip: fora dele,
-              a janela — que tem o tamanho do conteudo — cortava o texto pela
-              metade. */}
+          {/* O NOME (e o cronometro) ficam EM FLUXO, dentro do chip. */}
           {(open || active) && (
             <span
               className="text-muted-foreground ml-2 max-w-38 truncate text-xs"
@@ -1418,16 +1655,6 @@ export function CallingBar({
             >
               {label}
             </span>
-          )}
-
-          {/* Tem recado esperando: um ponto, e so. Quem abre a lista ve o
-              sininho com a conta. */}
-          {unread > 0 && !queueOpen && !open && (
-            <span
-              className="absolute top-1.5 right-1.5 size-2 rounded-full"
-              style={{ background: colorOf(messages[0].agentSlug) }}
-              aria-hidden="true"
-            />
           )}
 
           {open && (
@@ -1485,7 +1712,10 @@ export function CallingBar({
                   arrasto da janela, o caminho ate a engrenagem — em uma lista
                   aberta que ninguem pediu. E era ele que exigia os tres
                   remendos que sairam daqui: a marca de "abri no hover", o
-                  guarda de 600ms contra reabrir e o relogio de intencao. */}
+                  guarda de 600ms contra reabrir e o relogio de intencao.
+
+                  (Ele virava a bolinha do recado quando havia coisa nova; o
+                  aviso agora e do sino, e o V volta a ser so o V.) */}
               <Button
                 variant="secondary"
                 size="icon-xs"

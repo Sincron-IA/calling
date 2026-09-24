@@ -22,17 +22,16 @@ function trayImage() {
   // 16px e o tamanho que macOS e Linux esperam; o Windows aceita o de 32.
   if (process.platform === 'win32') return image
 
-  const small = image.resize({ width: 16, height: 16 })
-  // No macOS o icone da barra e monocromatico e acompanha o tema do sistema.
-  if (process.platform === 'darwin') small.setTemplateImage(true)
-  return small
+  // Sem `setTemplateImage` no macOS: o icone tem fundo proprio (o quadrado
+  // escuro do logo), e como template ele viraria so a silhueta do quadrado.
+  return image.resize({ width: 16, height: 16, quality: 'best' })
 }
 
 /**
- * @param {{prefs:{alwaysOnTop:boolean}, onToggle:()=>void, onConfig:(anchor:Electron.Rectangle|null)=>void, onAlwaysOnTop:(value:boolean)=>void, onQuit:()=>void}} actions
+ * @param {{prefs:{alwaysOnTop:boolean, startWithWindows:boolean}, onToggle:()=>void, onConfig:(anchor:Electron.Rectangle|null)=>void, onAlwaysOnTop:(value:boolean)=>void, onStartWithWindows:(value:boolean)=>void, onQuit:()=>void}} actions
  * @returns {Electron.Tray | null}
  */
-function createTray({ prefs, onToggle, onConfig, onAlwaysOnTop, onQuit }) {
+function createTray({ prefs, onToggle, onConfig, onAlwaysOnTop, onStartWithWindows, onQuit }) {
   const image = trayImage()
   if (image.isEmpty()) {
     console.warn(`[calling] icone da bandeja nao encontrado em ${ICON_FILE}`)
@@ -74,6 +73,12 @@ function createTray({ prefs, onToggle, onConfig, onAlwaysOnTop, onQuit }) {
           type: 'checkbox',
           checked: Boolean(current?.alwaysOnTop),
           click: (item) => onAlwaysOnTop(item.checked),
+        },
+        {
+          label: 'Iniciar com o Windows',
+          type: 'checkbox',
+          checked: Boolean(current?.startWithWindows),
+          click: (item) => onStartWithWindows(item.checked),
         },
         { type: 'separator' },
         { label: 'Configuração…', click: () => onConfig(anchor()) },

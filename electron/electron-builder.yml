@@ -45,11 +45,10 @@ extraResources:
   - from: ../web/dist
     to: web/dist
 
-# Sem `icon:` de proposito. O unico icone do repo e o `assets/tray-icon.png`,
-# de 32x32, que e da BANDEJA; o electron-builder exige 256x256 ou mais para o
-# icone do aplicativo e recusa o build com um menor. Enquanto nao houver um
-# icone grande, o pacote sai com o icone padrao do Electron — inventar um aqui
-# seria pior. Quando existir, basta apontar `icon: assets/icon.png` (>=512px).
+# Icone do aplicativo: o logo "C falante" (C claro + ponto verde) em 1024px.
+# A fonte vetorial e `assets/icon.svg`; o `assets/tray-icon.png` (32px) e o
+# mesmo desenho com traco mais grosso, para aguentar o tamanho da bandeja.
+icon: assets/icon.png
 
 # ---------------------------------------------------------------- Windows ---
 # `portable`: UM `.exe` so, sem instalador e sem passar pelo Painel de

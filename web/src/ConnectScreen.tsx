@@ -113,10 +113,9 @@ function hostOf(url: string): string {
  * Tres situacoes, nao duas:
  *
  *   painel da engrenagem  -> o cartao E a janela (sem tela em volta).
- *   janela da barra       -> a janela tem o TAMANHO DO CONTEUDO, entao aqui
- *                            tambem nao pode haver tela em volta: um
- *                            `min-h-svh` faria a janela nascer do tamanho do
- *                            monitor.
+ *   janela da barra       -> a janela e transparente e maior que o cartao,
+ *                            entao aqui tambem nao pode haver tela em volta:
+ *                            um `min-h-svh` pintaria a janela inteira.
  *   navegador             -> aí sim, tela cheia com o cartao no meio.
  */
 function Shell({
@@ -128,17 +127,22 @@ function Shell({
   children: ReactNode
 } & React.ComponentProps<'form'>) {
   const boxed = compact || isDesktopMainWindow
+  // Na janela da barra o cartao faz o papel do chip: e o que segura o clique
+  // (a parte transparente em volta deixa passar) e o que fica parado na tela.
+  const inMain = isDesktopMainWindow && !compact
 
   return (
     <TooltipProvider delayDuration={200}>
       <div
+        data-surface={inMain ? '' : undefined}
+        data-anchor={inMain ? '' : undefined}
         className={cn(
           'flex flex-col',
           boxed
             ? 'bg-card text-card-foreground app-no-drag rounded-xl border p-4 shadow-2xl'
             : 'bg-background min-h-svh items-center justify-center p-6',
-          // No painel a largura vem da JANELA; na primeira conexao ela vem
-          // daqui, porque e a pagina que diz o tamanho da janela.
+          // No painel a largura vem da JANELA; na janela da barra ela vem
+          // daqui, porque la a janela e maior que o cartao.
           boxed && (compact ? 'w-full' : 'w-86'),
         )}
       >
@@ -159,8 +163,11 @@ function Head({ status, compact }: { status?: string; compact: boolean }) {
   return (
     <header
       className={cn('flex items-center gap-2', compact && 'app-drag')}
-      // Sem moldura de sistema, o cabecalho e a unica alca para arrastar o painel.
+      // Sem moldura de sistema, o cabecalho e a unica alca para arrastar. No
+      // painel quem arrasta e o sistema (`app-drag`); na janela da barra, o
+      // proprio app (`DesktopGate`).
       data-slot="panel-head"
+      data-drag-handle={isDesktopMainWindow && !compact ? '' : undefined}
     >
       <span
         className={cn('size-1.5 rounded-full', ok ? 'bg-ok' : 'bg-muted-foreground')}
@@ -334,6 +341,11 @@ export function ConnectingCard({
 }) {
   return (
     <div
+      // Na janela da barra este cartao e tudo o que existe: segura o clique,
+      // fica parado no canto e arrasta a janela.
+      data-surface=""
+      data-anchor=""
+      data-drag-handle=""
       className={cn(
         'flex',
         compact

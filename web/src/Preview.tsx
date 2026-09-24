@@ -15,7 +15,7 @@ import { useState, type ReactNode } from 'react'
 import { PanelTopOpenIcon, PowerIcon } from 'lucide-react'
 
 import { AgentPanel } from './AgentPanel'
-import { CallingBar } from './CallingBar'
+import { CallingBar, type QueuedMessage } from './CallingBar'
 import { ConnectScreen, ConnectingCard } from './ConnectScreen'
 import { Button } from '@/components/ui/button'
 import {
@@ -82,7 +82,7 @@ function Prefs() {
         <FieldContent>
           <FieldLabel htmlFor="aot">Sempre no topo</FieldLabel>
           <FieldDescription>
-            A barra fica por cima das outras janelas. A mesma opção está no menu da bandeja.
+            A barra fica por cima das outras janelas.
           </FieldDescription>
         </FieldContent>
         <Switch id="aot" checked={on} onCheckedChange={setOn} />
@@ -115,6 +115,35 @@ function Case({ title, note, children }: { title: string; note: string; children
       </div>
       <div className="flex justify-end">{children}</div>
     </div>
+  )
+}
+
+/**
+ * Um toque que passou do tempo, junto de um recado. De mentira, mas vivo: o
+ * "Limpar" leva so o recado, e decidir o pedido tira ele da lista.
+ */
+function PendingBench() {
+  const late = { ...call('flow', 'Posso rodar a migração das contas agora?', 'late-flow'), receivedAt: Date.now() - 900_000 }
+  const [items, setItems] = useState<QueuedMessage[]>([
+    { id: 'call-late-flow', agentSlug: 'flow', text: late.reason, at: late.receivedAt, read: false, call: late },
+    {
+      id: 'm0',
+      agentSlug: 'vetor',
+      text: 'A migração terminou. Nenhuma coluna foi perdida.',
+      at: Date.now() - 400_000,
+      read: false,
+    },
+  ])
+  return (
+    <CallingBar
+      {...BASE}
+      currentSlug="flow"
+      messages={items}
+      onMessagesRead={() => setItems((list) => list.map((item) => ({ ...item, read: true })))}
+      onDismissMessage={(id) => setItems((list) => list.filter((item) => item.id !== id))}
+      onClearMessages={() => setItems((list) => list.filter((item) => item.call))}
+      onResolveLate={(item) => setItems((list) => list.filter((entry) => entry.id !== item.id))}
+    />
   )
 }
 
@@ -189,7 +218,11 @@ export function Preview() {
             />
           </Case>
 
-          <Case title="Fila de recados" note="abra o menu e clique no sininho">
+          <Case title="Notificações" note="o sino no chip abre; o pedido não sai com Limpar">
+            <PendingBench />
+          </Case>
+
+          <Case title="Fila de recados" note="clique no sino do chip">
             <CallingBar
               {...BASE}
               messages={[

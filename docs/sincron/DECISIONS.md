@@ -689,3 +689,60 @@ Registre decisões técnicas, exceções e motivos.
 - Revisar em: se o `/api/ring` ganhar um modo "callback automático" (o próprio
   bridge liga de volta quando o agente termina de investigar), esta regra pode
   ficar mais específica sobre como oferecer isso durante a ligação.
+
+## 2026-09-21 - A janela da barra para de mudar de tamanho
+
+- Contexto: o dono reclamou de dois defeitos que davam ar de malfeito. (1) A
+  cada coisa que abria (a lista, o chip, um aviso) a barra dava um salto e
+  piscava fora do lugar antes de assentar. (2) Perto do topo da tela as coisas
+  quase nunca abriam para baixo, e arrastar a barra com algo aberto até o topo
+  a fazia se puxar para baixo em vez de trocar de lado.
+- Causa: (1) a janela vestia o conteúdo, e cada abertura era um `setBounds`. O
+  Windows, ao redimensionar uma janela transparente, pinta um quadro com a
+  imagem velha no canto de cima à esquerda do retângulo novo antes de a página
+  redesenhar. A folga de 320px e a espera por calmaria só mudavam o tamanho do
+  salto. (2) A regra `.grow-down` mexia em `justify-content` — numa linha flex,
+  o eixo HORIZONTAL —, então o chip continuava grudado embaixo; e a virada
+  dependia da altura inflada pela folga, virando e desvirando.
+- Decisão: a janela tem tamanho fixo (380x720), transparente, com o chip num
+  canto. O que abre, abre dentro dela só com CSS. A parte transparente deixa o
+  clique passar (`setIgnoreMouseEvents(true, { forward: true })`); a página diz
+  quando o cursor está sobre um `data-surface`. O arrasto saiu do
+  `-webkit-app-region` (que não recebe o mouse encaminhado e não avisa início
+  nem fim) e virou do app: a página diz "começou"/"soltou", o processo
+  principal segue o cursor. O lado para onde as coisas abrem vem da METADE da
+  tela onde o chip está (com 32px de histerese), nunca do tamanho do conteúdo —
+  e troca no meio do arrasto: a página se apaga, vira o CSS, confirma, a janela
+  anda, e ela volta (~25ms apagada).
+- Alternativas: (a) manter o redimensionamento e mascarar com opacidade a cada
+  abertura — cada abertura piscaria de outro jeito; (b) janela do tamanho da
+  tela inteira — resolveria o salto, mas arrastar para outro monitor ficaria
+  pior; (c) trocar de lado só ao soltar — o dono pediu para ver a troca durante
+  o arrasto.
+- Impacto: todo cartão novo da janela da barra precisa de `data-surface`,
+  senão o clique atravessa ele. Clicar em outro app fecha a lista (a janela
+  perde o foco), já que o clique "fora" não chega mais à página.
+- Revisar em: se o clique encaminhado falhar em alguma máquina (Windows com
+  monitores de DPI diferentes é o caso mais provável).
+
+## 2026-09-21 - Toque sem resposta vira notificação, e a última notificação assume o chip
+
+- Contexto: passado o tempo do toque (30s), o cartão sumia e o pedido se
+  perdia — não havia como aprovar depois. E a notificação de um agente não
+  mudava o chip, que seguia mostrando outro.
+- Decisão: o toque que termina em `no_answer` (relógio da barra, relógio do
+  servidor ou agente que desistiu) vai para as notificações com Aprovar, Ligar
+  e Recusar, e só sai de lá decidido — "Limpar" leva só os recados. O
+  `/api/ring` do agente continua voltando com `no_answer` no tempo de sempre
+  (o contrato com os agentes não mudou); a decisão tardia chega a ele como
+  recado escrito pelo `/api/message`, que já ecoa na thread do Telegram e passa
+  para a sessão viva. O sino fica no próprio chip enquanto houver notificação,
+  e a última notificação troca o agente do chip — menos no meio de uma ligação
+  ou com o campo de escrever aberto.
+- Alternativas: (a) tirar o tempo do toque e segurar o `/api/ring` até a
+  decisão — o agente ficaria preso (o Bash do Claude Code corta em 2 a 10 min)
+  e o Telegram deixaria de ser o plano B; (b) guardar a fila no servidor — a
+  fila é memória só do app, como os recados.
+- Impacto: fechar o app perde os pedidos pendentes, como já perdia os recados.
+  "Ligar" num pedido tardio abre a ligação, mas a sessão de voz não recebe o
+  motivo do toque.

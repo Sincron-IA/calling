@@ -32,23 +32,34 @@ contextBridge.exposeInMainWorld('callingDesktop', {
   /** O painel diz a altura do seu conteudo; a janela acompanha. */
   resizeConfigPanel: (height) => ipcRenderer.invoke('calling:resize-config', height),
 
-  /**
-   * A barra diz o tamanho do seu conteudo; a janela principal acompanha e
-   * continua ancorada pelo canto de baixo a direita.
-   * @param size `{ width, height }` em px de pagina
-   */
-  resizeMainWindow: (size) => ipcRenderer.invoke('calling:resize-main', size),
+  /** A pagina da barra montou: a janela pode aparecer. */
+  mainReady: () => ipcRenderer.invoke('calling:main-ready'),
 
   /**
-   * Onde a janela da barra esta na tela — hoje so uma pergunta: ela encostou na
-   * borda direita? E o que decide se a engrenagem fica ao LADO da barra ou
-   * EMBAIXO dela. Quem sabe disso e o processo principal, que e quem posiciona
-   * a janela.
+   * A janela da barra e transparente e de tamanho fixo: o que nao e cartao
+   * deixa o clique passar. `true` = o cursor esta em cima de algo da pagina.
+   */
+  setMouseCapture: (capture) => ipcRenderer.invoke('calling:mouse-capture', Boolean(capture)),
+
+  /**
+   * Comecou a arrastar o chip. A janela passa a seguir o cursor ate o
+   * `dragEnd`.
+   * @param rect o chip, em coordenadas da pagina
+   */
+  dragStart: (rect) => ipcRenderer.invoke('calling:drag-start', rect),
+
+  /** Soltou o chip. */
+  dragEnd: () => ipcRenderer.invoke('calling:drag-end'),
+
+  /**
+   * Para que lado as coisas abrem: para BAIXO (chip na metade de cima da
+   * tela) e para a DIREITA (chip na metade da esquerda). Quem sabe disso e o
+   * processo principal, que e quem posiciona a janela.
    */
   getMainEdge: () => ipcRenderer.invoke('calling:get-main-edge'),
 
   /**
-   * Avisa quando essa resposta muda (arrastaram a janela, mudou a resolucao).
+   * Avisa quando o lado muda (o chip passou da linha do meio num arrasto).
    * Devolve a funcao de parar de ouvir.
    */
   onMainEdge: (handler) => {
@@ -56,6 +67,9 @@ contextBridge.exposeInMainWorld('callingDesktop', {
     ipcRenderer.on('calling:main-edge', listener)
     return () => ipcRenderer.removeListener('calling:main-edge', listener)
   },
+
+  /** A pagina ja virou o conteudo (escondida): a janela pode andar. */
+  confirmMainEdge: (token) => ipcRenderer.invoke('calling:edge-ready', token),
 
   /** As preferencias do app (hoje: "sempre no topo"). */
   getPrefs: () => ipcRenderer.invoke('calling:get-prefs'),

@@ -103,6 +103,12 @@ Resposta (só chega quando o humano decide):
 ```
 
 `outcome` é sempre um de `approved`, `declined`, `answered`, `no_answer`.
+
+`no_answer` não é o fim do pedido: ele continua nas notificações do app, e o
+humano ainda pode aprovar, recusar ou ligar depois. Uma decisão tardia chega
+ao agente como **recado escrito** (o mesmo caminho do `/api/message`), no
+formato `Aprovado — sobre o seu toque das HH:MM ("<motivo>"), que eu não vi a
+tempo.` (ou `Recusado — ...`), com o texto do humano embaixo, se houver.
 `reply` só existe se o humano escreveu um texto ao aprovar/recusar — trate
 como uma instrução de verdade quando vier. Se `outcome` for `answered`, o
 humano vai responder por voz numa ligação separada que abre depois — essa

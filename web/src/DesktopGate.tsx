@@ -8,8 +8,9 @@
  *   3. voltou do login     -> "Conectando…" enquanto conferimos com o bridge
  *   4. deu certo           -> o app de sempre, com a barra do Calling
  *
- * Depois disso a configuracao nao volta mais como tela cheia: a engrenagem no
- * canto abre o painel compacto (`ConfigPanel`, numa janela sem moldura).
+ * Depois disso a configuracao nao volta mais como tela cheia: a engrenagem na
+ * lista de agentes abre o painel compacto (`ConfigPanel`, numa janela sem
+ * moldura).
  *
  * Nas vezes seguintes o passo 1 nem aparece: a configuracao esta salva e o
  * cookie do Cloudflare continua na sessao do Electron, entao o app confere em
@@ -26,28 +27,22 @@ import { ConnectScreen, ConnectingCard, type ConnectPhase } from './ConnectScree
 import { fetchAgents } from './bridge'
 import { DEFAULT_BRIDGE_URL, setConfig } from './config'
 import { resetIncomingStream } from './incoming'
-import { desktop } from './desktop'
+import { desktop, type MainEdgeState } from './desktop'
 
 type Phase = 'boot' | ConnectPhase
 
 const GENERIC_ERROR = 'Não consegui falar com o bridge. Confira o endereço e a chave.'
 
 /**
- * Quanto tempo o conteudo precisa ficar parado antes de a janela encolher.
+ * Quanto o cursor anda, com o botao apertado, antes de virar arrasto.
  *
- * Um pouco acima da transicao mais longa do CSS (240ms, o chip abrindo), para
- * que a janela so acompanhe o tamanho FINAL — nunca um quadro do meio.
+ * Abaixo disso e clique: as barrinhas abrem a barra, o avatar escreve. Acima,
+ * e a mao pegando o chip — e o clique que viria no fim e engolido.
  */
-const SETTLE_MS = 280
+const DRAG_THRESHOLD_PX = 4
 
-/**
- * Quanto a janela cresce ALEM do conteudo quando algo comeca a abrir.
- *
- * Cobre com sobra o que ainda falta de qualquer transicao da interface (a maior
- * e o chip, ~215px de largura). O excedente e transparente e sai no `settle`
- * logo em seguida — o que ele compra e a janela nunca correr atras do conteudo.
- */
-const GROW_SLACK = 320
+/** O que conta como "em cima de algo da pagina" para o clique nao atravessar. */
+const SURFACE = '[data-surface]'
 
 /**
  * A tela diz o que o bridge disse.
@@ -122,106 +117,167 @@ export function DesktopGate() {
     }
   }, [api])
 
-  /* --------------------------------------------- a janela veste o conteudo */
+  /* ------------------------------------------ a janela da barra, por dentro */
 
-  /**
-   * A janela nao tem moldura nem tamanho proprio: ela e do tamanho do que esta
-   * dentro dela. O `#root` e quem sabe isso (no desktop ele encolhe ate o
-   * conteudo, ver `.desktop-main` no CSS) — aqui so contamos para o processo
-   * principal, que reancora a janela no canto.
+  /*
+   * A JANELA NAO VESTE MAIS O CONTEUDO.
    *
-   * Um observador basta para tudo: a tela de conexao, a barra, o chip que
-   * cresce no hover e o cartao de chamada recebida passam todos por aqui.
+   * Ela media o `#root` e pedia um `setBounds` a cada coisa que abria — e o
+   * Windows, ao redimensionar uma janela transparente, pinta um quadro com a
+   * imagem velha fora do lugar antes de a pagina redesenhar. Era o "tchucho"
+   * de toda abertura. Agora a janela tem tamanho fixo (ver `MAIN_SIZE`, no
+   * processo principal) e o que abre, abre dentro dela, so com CSS.
+   *
+   * O preco de uma janela maior que o conteudo e a parte transparente: ela
+   * engoliria o clique de quem esta embaixo. Entao a pagina diz ao processo
+   * principal, a cada movimento do mouse, se o cursor esta em cima de um
+   * cartao (`data-surface`) — e so ai o clique e nosso.
    */
   useEffect(() => {
-    const root = document.getElementById('root')
-    if (!root) return
+    let capturing = false
+    void api.setMouseCapture(false)
+    void api.mainReady()
 
-    let frame = 0
-    let shrinkTimer = 0
-    let applied = { width: 0, height: 0 }
-
-    const send = (width: number, height: number) => {
-      applied = { width, height }
-      void api.resizeMainWindow({ width, height })
+    const onMove = (event: MouseEvent) => {
+      // Botao apertado (arrasto, selecao de texto): nao solta no meio do gesto.
+      if (event.buttons !== 0 && capturing) return
+      const over = event.target instanceof Element && event.target.closest(SURFACE) !== null
+      if (over === capturing) return
+      capturing = over
+      void api.setMouseCapture(over)
     }
 
-    /*
-     * DUAS CHAMADAS POR GESTO, NAO CATORZE.
-     *
-     * O chip abre em 240ms de transicao CSS e o observador dispara a cada
-     * quadro dela. A versao anterior segurava o ENCOLHER mas mandava todo
-     * quadro do CRESCER — uns catorze `setBounds` em sequencia, cada um por
-     * IPC, cada um assincrono. A janela ficava alguns quadros atras do
-     * conteudo, entao por um instante ela era mais estreita do que o que havia
-     * dentro dela: o conteudo aparecia cortado a esquerda (o "estrangulado") e
-     * a borda esquerda varria por baixo do cursor (o "pulando"), o que ainda
-     * devolvia `pointerenter`/`pointerleave` sinteticos.
-     *
-     * A janela nao pode ir ATRAS da animacao — ela tem que ja estar grande
-     * quando a animacao comeca. Como o tamanho final so se conhece no fim,
-     * crescemos de uma vez com folga: um retangulo maior que o conteudo e
-     * invisivel (a janela e transparente), entao a folga nao custa nada, e os
-     * quadros seguintes ja cabem nela e nao mandam mais nada.
-     *
-     * Fica assim: UMA chamada ao comecar a crescer, e UMA no fim, quando o
-     * conteudo para e a janela veste o tamanho exato.
-     */
-    const read = () => {
-      const rect = root.getBoundingClientRect()
-      return { width: Math.ceil(rect.width), height: Math.ceil(rect.height) }
+    window.addEventListener('mousemove', onMove)
+    return () => window.removeEventListener('mousemove', onMove)
+  }, [api])
+
+  /*
+   * O ARRASTO.
+   *
+   * Quem tem `data-drag-handle` (o chip, o botao da pilha, o cabecalho do
+   * cartao de chamada) pega a janela. Os botoes dentro dele continuam botoes:
+   * so vira arrasto quando o cursor anda `DRAG_THRESHOLD_PX` com o botao
+   * apertado — e ai o clique do fim e engolido, para soltar o chip nao abrir
+   * a barra.
+   *
+   * Quem segue o cursor e o processo principal; aqui so dizemos quando comeca
+   * (e onde esta o chip, que e o que fica preso na mao) e quando termina.
+   */
+  useEffect(() => {
+    let press: { id: number; x: number; y: number; handle: Element } | null = null
+    let dragging = false
+    let swallowClick = false
+
+    const onDown = (event: PointerEvent) => {
+      if (event.button !== 0) return
+      const target = event.target instanceof Element ? event.target : null
+      const handle = target?.closest('[data-drag-handle]')
+      if (!handle || target?.closest('input, textarea, select')) return
+      press = { id: event.pointerId, x: event.screenX, y: event.screenY, handle }
+      dragging = false
     }
 
-    /** Passado o tempo de calmaria, a janela veste o tamanho que sobrou. */
-    const settle = () => {
-      const { width, height } = read()
-      if (width < 1 || height < 1) return
-      if (width === applied.width && height === applied.height) return
-      send(width, height)
+    const onMove = (event: PointerEvent) => {
+      if (!press || dragging || event.pointerId !== press.id) return
+      const moved = Math.hypot(event.screenX - press.x, event.screenY - press.y)
+      if (moved < DRAG_THRESHOLD_PX) return
+      dragging = true
+      const anchor = document.querySelector('[data-anchor]') ?? press.handle
+      const rect = anchor.getBoundingClientRect()
+      try {
+        ;(press.handle as HTMLElement).setPointerCapture(event.pointerId)
+      } catch {
+        // Sem captura o arrasto continua: quem segue o cursor e o Electron.
+      }
+      void api.dragStart({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
     }
 
-    const measure = () => {
-      frame = 0
-      const { width, height } = read()
-      if (width < 1 || height < 1) return
-
-      window.clearTimeout(shrinkTimer)
-      // O tamanho exato vem depois que tudo parar — inclusive o que cresceu com
-      // folga aqui em cima.
-      shrinkTimer = window.setTimeout(settle, SETTLE_MS)
-
-      // Ja cabe? Entao nao ha nada a fazer: e um quadro do meio da animacao.
-      if (width <= applied.width && height <= applied.height) return
-
-      // Nao cabe: cresce de uma vez, com a folga que cobre o resto da animacao.
-      // A folga vai so no eixo que esta crescendo — um retangulo transparente
-      // maior que o conteudo nao aparece, mas engole clique enquanto existe.
-      send(
-        width > applied.width ? width + GROW_SLACK : applied.width,
-        height > applied.height ? height + GROW_SLACK : applied.height,
-      )
+    const onUp = (event: PointerEvent) => {
+      if (!press || event.pointerId !== press.id) return
+      if (dragging) {
+        void api.dragEnd()
+        // O `click` sai logo depois deste `pointerup`, na mesma leva de
+        // eventos; o relogio so limpa o sinal se ele nao vier.
+        swallowClick = true
+        window.setTimeout(() => (swallowClick = false), 0)
+      }
+      press = null
+      dragging = false
     }
 
-    // Um quadro por vez: o observador dispara varias vezes dentro do mesmo.
-    const schedule = () => {
-      if (frame) return
-      frame = window.requestAnimationFrame(measure)
+    const onClick = (event: MouseEvent) => {
+      if (!swallowClick) return
+      swallowClick = false
+      event.preventDefault()
+      event.stopPropagation()
     }
 
-    measure()
-    const observer = new ResizeObserver(schedule)
-    observer.observe(root)
+    window.addEventListener('pointerdown', onDown, true)
+    window.addEventListener('pointermove', onMove, true)
+    window.addEventListener('pointerup', onUp, true)
+    window.addEventListener('pointercancel', onUp, true)
+    window.addEventListener('click', onClick, true)
     return () => {
-      observer.disconnect()
-      window.cancelAnimationFrame(frame)
-      window.clearTimeout(shrinkTimer)
+      if (dragging) void api.dragEnd()
+      window.removeEventListener('pointerdown', onDown, true)
+      window.removeEventListener('pointermove', onMove, true)
+      window.removeEventListener('pointerup', onUp, true)
+      window.removeEventListener('pointercancel', onUp, true)
+      window.removeEventListener('click', onClick, true)
     }
   }, [api])
 
-  /* A ENGRENAGEM NAO MORA MAIS AQUI, entao a borda da tela nao muda mais o
-     desenho: ela e uma linha no cabecalho da lista de agentes, e a lista abre
-     sempre no mesmo lugar. O `getMainEdge`/`onMainEdge` da ponte continua de pe
-     para quem precisar saber onde a janela esta — hoje, ninguem. */
+  /*
+   * PARA QUE LADO AS COISAS ABREM.
+   *
+   * Quem decide e o processo principal, pela metade da tela onde o chip esta:
+   * na de cima, a lista, os avisos e as notificacoes abrem ABAIXO dele; na da
+   * esquerda, abrem a DIREITA. Aqui so viramos o canto em que o CSS encosta o
+   * conteudo (`.grow-down`, `.grow-right` no `index.css`).
+   *
+   * Quando a troca acontece no meio de um arrasto, a janela tambem anda (para
+   * o chip continuar debaixo da mao). Para os dois nunca aparecerem
+   * desencontrados, o conteudo some (`edge-swap`), vira, confirmamos, a janela
+   * anda, e so entao ele volta.
+   */
+  useEffect(() => {
+    let alive = true
+    const body = document.body
+
+    const flip = (state: MainEdgeState) => {
+      body.classList.toggle('grow-down', state.growDown)
+      body.classList.toggle('grow-right', state.growRight)
+    }
+
+    const apply = (state: MainEdgeState) => {
+      if (!alive) return
+      if (!state.swap) {
+        flip(state)
+        return
+      }
+      const token = state.swap
+      body.classList.add('edge-swap')
+      flip(state)
+      // Dois quadros: o primeiro ja pinta o conteudo apagado, virado.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          void api
+            .confirmMainEdge(token)
+            .catch(() => undefined)
+            .finally(() => requestAnimationFrame(() => body.classList.remove('edge-swap')))
+        }),
+      )
+    }
+
+    void api.getMainEdge().then(apply)
+    const stop = api.onMainEdge(apply)
+
+    return () => {
+      alive = false
+      stop()
+      body.classList.remove('grow-down', 'grow-right', 'edge-swap')
+    }
+  }, [api])
 
   /* ------------------------------------------------ conectar de verdade -- */
 
@@ -313,7 +369,8 @@ export function DesktopGate() {
 
   if (!connected) {
     return phase === 'boot' ? (
-      <ConnectingCard />
+      // Em caixa: a versao de tela cheia pintaria a janela inteira de fundo.
+      <ConnectingCard compact />
     ) : (
       <ConnectScreen
         defaultBridgeUrl={saved.bridgeUrl}
@@ -327,14 +384,6 @@ export function DesktopGate() {
     )
   }
 
-  /**
-   * Barra e engrenagem moram no MESMO bloco de proposito: e nele que o `:hover`
-   * (e o `:focus-within`, para quem anda de Tab) acende a engrenagem. Em repouso
-   * ela fica invisivel — a barra sozinha, como o Luiz pediu.
-   *
-   * `shell--stacked` e a barra colada na borda direita: a engrenagem desce para
-   * baixo da barra em vez de ficar espremida contra o canto da tela.
-   */
   return <App key={session} readyNotice={readyNotice} onOpenConfig={openConfigPanel} />
 }
 

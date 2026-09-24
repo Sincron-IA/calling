@@ -19,6 +19,7 @@ import { createCallAdapter } from './gemini'
 import { agentColor, pickPreferredAgent, registerCall } from './agents'
 import {
   CallingBar,
+  formatClock,
   type CallingBarProps,
   type AgentChange,
   type CallPhase,
@@ -34,12 +35,37 @@ import {
   subscribeAgentMessages,
   subscribeAgentsChanged,
   subscribeIncomingCalls,
+  subscribeMissedCalls,
   type DeclineCause,
   type IncomingCall,
+  type LateAction,
 } from './incoming'
 
-/** Quantos recados empurrados a fila guarda. Passou disso, o mais velho sai. */
+/**
+ * Quantos recados empurrados a fila guarda. Passou disso, o mais velho sai.
+ * Toque esperando decisao nao conta aqui e nunca sai por falta de espaco.
+ */
 const MESSAGE_QUEUE_MAX = 30
+
+/** Poe uma notificacao nova na frente, sem nunca empurrar um pedido pendente para fora. */
+function withNotification(queue: QueuedMessage[], item: QueuedMessage): QueuedMessage[] {
+  let room = MESSAGE_QUEUE_MAX
+  return [item, ...queue].filter((entry) => entry.call || room-- > 0)
+}
+
+/**
+ * O recado que leva ao agente uma decisao que chegou atrasada.
+ *
+ * O `/api/ring` dele ja voltou com `no_answer`, entao a resposta vai pelo mesmo
+ * caminho de um recado escrito (`/api/message`): a sessao de recados dele
+ * recebe, a thread do Telegram ganha o eco, e a sessao viva fica sabendo. O
+ * texto diz a que pedido se refere — ele pode ter feito outros desde entao.
+ */
+function lateDecisionText(call: IncomingCall, action: 'approve' | 'decline', reply?: string): string {
+  const verdict = action === 'approve' ? 'Aprovado' : 'Recusado'
+  const head = `${verdict} — sobre o seu toque das ${formatClock(call.receivedAt)} ("${call.reason}"), que eu não vi a tempo.`
+  return reply ? `${head}\n\n${reply}` : head
+}
 
 /** Quanto tempo depois de salvar por aqui o SSE ainda e "eco nosso". */
 const OWN_SAVE_WINDOW_MS = 4000
@@ -192,6 +218,27 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
   // SSE. A fila da tela e sempre a que o servidor manda.
   useEffect(() => subscribeIncomingCalls(setIncoming), [])
 
+  /* A ULTIMA NOTIFICACAO ASSUME O CHIP.
+     O Flow mandou recado: e o Flow que aparece no chip — avatar, nome, e o
+     avatar abre o campo endereçado a ele. Duas excecoes, pelo mesmo motivo
+     (o chip nao pode desdizer o que esta acontecendo): no meio de uma ligacao
+     o chip e de quem esta na linha, e com o campo aberto ele e de quem esta
+     recebendo o texto. Os dois sao lidos por ref porque as assinaturas do SSE
+     nascem uma vez so. */
+  const phaseRef = useRef(phase)
+  const composeForRef = useRef(compose.agentSlug)
+  useEffect(() => {
+    phaseRef.current = phase
+  }, [phase])
+  useEffect(() => {
+    composeForRef.current = compose.agentSlug
+  }, [compose.agentSlug])
+
+  const followNotification = useCallback((slug: string) => {
+    if (phaseRef.current !== 'idle' || composeForRef.current) return
+    setCurrent(slug)
+  }, [])
+
   /* O agente falou primeiro: recado empurrado pela sessao viva dele, sem que o
      Luiz tenha escrito nada. Cai no MESMO balao da resposta — e a mesma coisa
      (o agente dizendo algo), e um balao so evita duas coisas disputando o
@@ -201,22 +248,46 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
       subscribeAgentMessages((message) => {
         setReply({ agentSlug: message.agent, text: message.text })
         setMessages((queue) =>
-          [
-            {
-              // `randomUUID` nao existe em contexto inseguro; o relogio mais um
-              // acaso cobre o que a chave precisa ser: unica nesta lista.
-              id: `${message.at}-${Math.random().toString(36).slice(2, 8)}`,
-              agentSlug: message.agent,
-              text: message.text,
-              at: message.at,
-              read: false,
-            },
-            ...queue,
-          ].slice(0, MESSAGE_QUEUE_MAX),
+          withNotification(queue, {
+            // `randomUUID` nao existe em contexto inseguro; o relogio mais um
+            // acaso cobre o que a chave precisa ser: unica nesta lista.
+            id: `${message.at}-${Math.random().toString(36).slice(2, 8)}`,
+            agentSlug: message.agent,
+            text: message.text,
+            at: message.at,
+            read: false,
+          }),
         )
+        followNotification(message.agent)
       }),
-    [],
+    [followNotification],
   )
+
+  /* O TOQUE QUE NINGUEM ATENDEU VIRA NOTIFICACAO.
+     Chega por dois caminhos — o relogio da propria barra (`onDecline` com
+     `timeout`) e o servidor avisando `no_answer` (o tempo dele, ou o agente
+     que desistiu de esperar) — e os dois podem chegar para o mesmo toque: o
+     `id` do toque segura a repeticao. */
+  const addMissed = useCallback(
+    (missed: IncomingCall) => {
+      setMessages((queue) =>
+        queue.some((item) => item.call?.id === missed.id)
+          ? queue
+          : withNotification(queue, {
+              id: `call-${missed.id}`,
+              agentSlug: missed.agentSlug,
+              text: missed.reason,
+              at: missed.receivedAt,
+              read: false,
+              call: missed,
+            }),
+      )
+      followNotification(missed.agentSlug)
+    },
+    [followNotification],
+  )
+
+  useEffect(() => subscribeMissedCalls(addMissed), [addMissed])
 
   useEffect(() => {
     agentsRef.current = agents
@@ -426,8 +497,51 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
     (incomingCall: IncomingCall, cause: DeclineCause, reply?: string) => {
       declineIncoming(incomingCall, cause, reply)
       dismissIncoming(incomingCall.id)
+      // Tempo esgotado nao e "nao": o cartao sai daqui, o pedido vai para as
+      // notificacoes e espera por uma decisao de verdade.
+      if (cause === 'timeout') addMissed(incomingCall)
     },
-    [],
+    [addMissed],
+  )
+
+  /**
+   * Decidir um toque que ficou para depois.
+   *
+   * Ligar e o mesmo gesto do toque vivo: abre a ligacao com quem pediu. Aprovar
+   * e recusar viram um recado escrito para o agente (ver `lateDecisionText`),
+   * e a resposta dele aparece no balao, como a de qualquer recado. O pedido so
+   * sai das notificacoes quando o recado chegou — se falhar, ele fica ali para
+   * uma segunda tentativa.
+   */
+  const resolveLate = useCallback(
+    async (item: QueuedMessage, action: LateAction, reply?: string) => {
+      const late = item.call
+      if (!late || item.busy) return
+
+      if (action === 'answer') {
+        setMessages((queue) => queue.filter((entry) => entry.id !== item.id))
+        void call(item.agentSlug)
+        return
+      }
+
+      const setBusy = (busy: boolean) =>
+        setMessages((queue) => queue.map((entry) => (entry.id === item.id ? { ...entry, busy } : entry)))
+
+      setBusy(true)
+      try {
+        const answer = await sendMessage(item.agentSlug, lateDecisionText(late, action, reply))
+        setMessages((queue) => queue.filter((entry) => entry.id !== item.id))
+        setReply({ agentSlug: item.agentSlug, text: answer.reply, echoed: answer.echoed })
+      } catch (err) {
+        setBusy(false)
+        setReply({
+          agentSlug: item.agentSlug,
+          text: err instanceof Error ? err.message : 'Nao consegui falar com o bridge.',
+          isError: true,
+        })
+      }
+    },
+    [call],
   )
 
   /**
@@ -457,8 +571,10 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
     <main
       className={cn(
         'flex flex-col',
+        // `calling-stack`: o gancho que vira a coluna quando a barra troca de
+        // lado na tela (ver `index.css`).
         isDesktopMainWindow
-          ? 'items-end gap-2'
+          ? 'calling-stack items-end gap-2'
           : 'bg-background min-h-svh items-center justify-center gap-6 p-6',
       )}
     >
@@ -473,20 +589,28 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
 
       {/* O trabalho acontece em silencio: a barra e a unica coisa que fala. */}
       <section className="flex w-full max-w-65 flex-col items-stretch gap-2" aria-live="polite">
+        {/* `data-surface`: no app de desktop so o que e cartao segura o
+            clique — o resto da janela e transparente e deixa passar. */}
         {agents.length === 0 && !error && (
-          <p className="text-muted-foreground flex items-center justify-center gap-2 text-sm">
+          <p
+            data-surface=""
+            className="text-muted-foreground flex items-center justify-center gap-2 text-sm"
+          >
             <Spinner className="size-3.5" />
             Carregando agentes…
           </p>
         )}
         {phase === 'in-call' && waiting && (
-          <p className="text-muted-foreground flex items-center justify-center gap-2 text-sm">
+          <p
+            data-surface=""
+            className="text-muted-foreground flex items-center justify-center gap-2 text-sm"
+          >
             <Spinner className="size-3.5" />
             {currentName} está pensando…
           </p>
         )}
         {lastReply && (
-          <div className="bg-card text-card-foreground rounded-xl border p-3">
+          <div data-surface="" className="bg-card text-card-foreground rounded-xl border p-3">
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1.5">
                 <AgentAvatar name={currentName} color={colorOf(current)} src={avatarOf(current)} size={18} />
@@ -507,7 +631,7 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
           </div>
         )}
         {error && (
-          <Alert variant="destructive" role="alert">
+          <Alert data-surface="" variant="destructive" role="alert">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
@@ -538,7 +662,9 @@ export function App({ readyNotice = '', onOpenConfig }: AppProps) {
           setMessages((queue) => queue.map((item) => (item.read ? item : { ...item, read: true })))
         }
         onDismissMessage={(id) => setMessages((queue) => queue.filter((item) => item.id !== id))}
-        onClearMessages={() => setMessages([])}
+        // Limpar leva os recados; pedido esperando decisao fica ate ser decidido.
+        onClearMessages={() => setMessages((queue) => queue.filter((item) => item.call))}
+        onResolveLate={(item, action, reply) => void resolveLate(item, action, reply)}
         onOpenConfig={onOpenConfig}
         compose={compose}
         onDraftChange={(draft) => setCompose((state) => ({ ...state, draft }))}

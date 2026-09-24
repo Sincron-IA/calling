@@ -35,6 +35,8 @@ export interface StoredConfig {
 export interface AppPrefs {
   /** A barra fica por cima das janelas comuns. */
   alwaysOnTop: boolean
+  /** O Calling sobe sozinho quando o Windows liga. */
+  startWithWindows: boolean
 }
 
 export interface CallingDesktopApi {
@@ -56,19 +58,33 @@ export interface CallingDesktopApi {
   openConfigPanel(anchor?: PanelAnchor | null): Promise<void>
   /** Ajusta a altura da janela do painel a do conteudo. */
   resizeConfigPanel(height: number): Promise<void>
+  /** A pagina da barra montou: a janela pode aparecer. */
+  mainReady(): Promise<void>
   /**
-   * Ajusta a janela da barra ao tamanho do conteudo. Sem isso a janela teria um
-   * tamanho fixo e sobraria fundo em volta do cartao — o oposto de um widget de
-   * canto. Quem reancora no canto de baixo a direita e o processo principal.
+   * A janela da barra tem tamanho fixo e e transparente: o que nao e cartao
+   * deixa o clique passar para quem esta embaixo. `true` = o cursor esta em
+   * cima de algo da pagina, e o clique e nosso.
    */
-  resizeMainWindow(size: { width: number; height: number }): Promise<void>
-  /** Onde a janela da barra esta, para a pagina decidir o desenho. */
+  setMouseCapture(capture: boolean): Promise<void>
+  /**
+   * Comecou a arrastar. O retangulo e o do chip (ou do que estiver no lugar
+   * dele), em coordenadas da pagina: e ele que fica preso ao cursor.
+   */
+  dragStart(rect: PanelAnchor): Promise<void>
+  /** Soltou. */
+  dragEnd(): Promise<void>
+  /** Para que lado as coisas abrem agora. */
   getMainEdge(): Promise<MainEdgeState>
   /**
-   * Ouve as mudancas disso (arrastar a janela, trocar de monitor). Devolve a
+   * Ouve as mudancas disso (o chip passou da linha do meio da tela). Devolve a
    * funcao que para de ouvir.
    */
   onMainEdge(handler: (state: MainEdgeState) => void): () => void
+  /**
+   * A pagina ja virou o conteudo para o lado novo (e esta escondida): a janela
+   * pode andar. Resolve depois que ela andou.
+   */
+  confirmMainEdge(token: number): Promise<void>
   /** As preferencias do app. */
   getPrefs(): Promise<AppPrefs>
   /** Muda uma preferencia; devolve o estado novo, ja aplicado na janela. */
@@ -84,14 +100,21 @@ export interface CallingDesktopApi {
 }
 
 /**
- * O que o processo principal conta sobre a posicao da janela da barra.
+ * Para que lado as coisas da barra abrem — decidido pelo processo principal,
+ * que sabe onde o chip esta na tela.
  *
- * `rightEdge` e "a barra esta colada na borda direita da area util" — com a
- * engrenagem ao lado ela ficaria espremida no canto, entao a pagina a desenha
- * embaixo da barra.
+ * `growDown`: o chip esta na metade de CIMA, entao a lista, os avisos e as
+ * notificacoes abrem ABAIXO dele. `growRight`: esta na metade da ESQUERDA,
+ * entao abrem a direita. A pagina troca o canto em que o CSS encosta o
+ * conteudo (`.grow-down`, `.grow-right`) — ver `DesktopGate`.
+ *
+ * `swap` so vem numa TROCA durante o arrasto: a pagina se esconde, vira, e
+ * devolve o numero pelo `confirmMainEdge` para a janela poder andar.
  */
 export interface MainEdgeState {
-  rightEdge: boolean
+  growDown: boolean
+  growRight: boolean
+  swap?: number
 }
 
 /** Retangulo de onde o painel deve sair. */
@@ -128,8 +151,8 @@ export const isConfigPanel =
  * Esta janela e a PRINCIPAL do app de desktop (a da barra / da primeira
  * conexao)?
  *
- * Ela nao tem moldura e veste o tamanho do conteudo, entao o CSS de navegador
- * (tela cheia, `100vh`, barra ancorada no canto da viewport) nao serve aqui —
- * quem ancora e o Electron. E a classe `desktop-main` no `body` que troca isso.
+ * Ela nao tem moldura, e transparente e tem tamanho fixo em volta do chip,
+ * entao o CSS de navegador (tela cheia, fundo, barra centralizada) nao serve
+ * aqui. E a classe `desktop-main` no `body` que troca isso.
  */
 export const isDesktopMainWindow = isDesktop && !isConfigPanel

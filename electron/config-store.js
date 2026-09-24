@@ -46,13 +46,20 @@ function readFile() {
  * manter. Nenhuma e segredo — vao em JSON limpo, ao contrario da chave.
  */
 
-/** Como o app comeca quando nao ha nada gravado. */
-const DEFAULT_PREFS = { alwaysOnTop: false }
+/**
+ * Como o app comeca quando nao ha nada gravado. "Sempre no topo" nasce ligado:
+ * o Calling fica por cima de tudo, como o Wispr Flow — so desliga quem pedir.
+ */
+const DEFAULT_PREFS = { alwaysOnTop: true, startWithWindows: false }
 
 function getPrefs() {
   const raw = readFile()
   const prefs = raw && typeof raw.prefs === 'object' && raw.prefs ? raw.prefs : {}
-  return { ...DEFAULT_PREFS, alwaysOnTop: prefs.alwaysOnTop === true }
+  return {
+    ...DEFAULT_PREFS,
+    alwaysOnTop: prefs.alwaysOnTop !== false,
+    startWithWindows: prefs.startWithWindows === true,
+  }
 }
 
 /**

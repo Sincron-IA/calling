@@ -124,6 +124,7 @@ export function AgentPanel({ agent, color, avatar, onClose, onSaving, onSaved }:
 
   return (
     <div
+      data-surface=""
       className="bg-popover text-popover-foreground app-no-drag animate-in fade-in-0 slide-in-from-bottom-1 flex w-68 flex-col gap-3 rounded-xl border p-3 shadow-2xl duration-150 ease-out"
       role="dialog"
       aria-label={`Aparência de ${agent.name}`}

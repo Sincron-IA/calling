@@ -43,41 +43,64 @@ let quitting = false
 let trayReady = false
 
 /**
- * Tamanho de partida da janela, valendo so ate a pagina dizer o dela. Nao e
- * "o tamanho do app": e o minimo para a janela nao nascer enorme e preta atras
- * do cartao enquanto o React ainda nem montou.
+ * A JANELA DA BARRA TEM TAMANHO FIXO.
+ *
+ * Ela vestia o tamanho do conteudo: cada coisa que abria (a lista, o chip, um
+ * aviso) virava um `setBounds`. E o Windows, ao redimensionar uma janela
+ * transparente, pinta UM quadro com a imagem velha no canto de cima a esquerda
+ * do retangulo novo antes de a pagina redesenhar — era esse o "tchucho": o
+ * chip piscando fora do lugar a cada abertura. Folga, espera por calmaria,
+ * tolerancia de DPI: tudo remendo em volta de um redimensionamento que nao
+ * precisava existir.
+ *
+ * Agora a janela e um retangulo transparente fixo em volta do chip, e o que
+ * abre, abre dentro dele, so com CSS. O que nao e cartao deixa o clique passar
+ * para quem esta embaixo (`setIgnoreMouseEvents` + o `calling:mouse-capture`
+ * da pagina). A janela so se mexe quando alguem arrasta o chip.
+ *
+ * O tamanho cobre a coluna mais alta que a barra monta (lista + aviso +
+ * balao + chip) e a tela de conexao (344px de largura).
  */
-const MAIN_START = { width: 360, height: 400 }
+const MAIN_SIZE = { width: 380, height: 720 }
 
-/** Respiro entre a janela e o canto da area util. */
+/** Respiro entre a janela e o canto da area util, no repouso. */
 const MAIN_GAP = 24
 
-/**
- * Quanto espaco a engrenagem quer ter entre a barra e a borda DIREITA da area
- * util para continuar ao lado dela. Abaixo disso a pagina passa a desenhar a
- * engrenagem EMBAIXO da barra — senao ela ficaria espremida contra o canto da
- * tela (e, no Windows, em cima da faixa que abre a central de notificacoes).
- *
- * O repouso da janela ja deixa `MAIN_GAP` (24px) de folga, maior que isto: o
- * desenho aprovado — engrenagem ao lado — continua sendo o normal. Quem cai no
- * caso de baixo e quem ARRASTOU a barra ate encostar na borda.
- */
-const MAIN_EDGE_MARGIN = 16
+/** Folga do `#root` (`index.css`): o chip mora a isto do canto da janela. */
+const MAIN_PAD = 8
 
 /**
- * O canto de BAIXO A DIREITA da janela principal, em coordenadas de tela.
- *
- * E este ponto que fica parado quando o conteudo muda de tamanho: a janela
- * cresce para cima e para a esquerda, como um widget de bandeja, em vez de
- * escorregar para fora da tela. Se o usuario arrastar a janela, o ponto vai
- * junto — dai em diante ela cresce a partir de onde ele deixou.
+ * A troca de lado so acontece quando o chip passa a linha do meio da tela por
+ * esta distancia. Sem ela, arrastar em cima da linha faria a coluna virar e
+ * desvirar a cada pixel.
  */
-let mainAnchor = null
+const FLIP_HYSTERESIS = 32
 
-/** Ultimo retangulo que NOS aplicamos: e como sabemos se o 'move' foi do usuario. */
-let mainApplied = null
+/** Ritmo do arrasto: a janela segue o cursor a cada 8ms (~120 quadros/s). */
+const DRAG_TICK_MS = 8
 
-/** A janela so aparece depois que a pagina diz o tamanho dela (ou no estouro). */
+/** Se a pagina nao confirmar a troca de lado nisso, trocamos assim mesmo. */
+const SWAP_FALLBACK_MS = 400
+
+/**
+ * Para que lado as coisas abrem.
+ *
+ * `down`: o chip esta na metade de CIMA da tela, entao a lista, os avisos e as
+ * notificacoes abrem ABAIXO dele. `right`: o chip esta na metade da ESQUERDA,
+ * entao abrem a direita. O repouso (canto de baixo a direita) e os dois
+ * `false`: tudo abre para cima e para a esquerda.
+ */
+let mainMode = { down: false, right: false }
+
+/**
+ * O canto da janela que fica PARADO: o do lado do chip. Com `mainMode` de
+ * repouso e o canto de baixo a direita; virado para baixo, o de cima; e assim
+ * por diante. O CSS encosta o conteudo nesse mesmo canto (`.grow-down`,
+ * `.grow-right` no `index.css`).
+ */
+let mainCorner = null
+
+/** A janela aparece quando a pagina montou (ou no estouro do relogio). */
 let mainRevealed = false
 let mainRevealTimer = null
 
@@ -108,8 +131,17 @@ async function resolveAppUrl() {
   return appServer.origin
 }
 
+/** A area util do monitor onde um ponto esta. */
+function workAreaAt(point) {
+  const display = screen.getDisplayNearestPoint({
+    x: Math.round(point.x),
+    y: Math.round(point.y),
+  })
+  return (display || screen.getPrimaryDisplay()).workArea
+}
+
 /** Canto de baixo a direita da area util: onde a barra do Calling mora. */
-function restingAnchor() {
+function restingCorner() {
   const { workArea } = screen.getPrimaryDisplay()
   return {
     x: Math.round(workArea.x + workArea.width - MAIN_GAP),
@@ -117,27 +149,74 @@ function restingAnchor() {
   }
 }
 
+/** O tamanho fixo, sem passar do monitor (tela baixa encolhe a janela). */
+function mainSize(corner) {
+  const workArea = workAreaAt(corner)
+  return {
+    width: Math.min(MAIN_SIZE.width, workArea.width),
+    height: Math.min(MAIN_SIZE.height, workArea.height),
+  }
+}
+
 /**
- * O retangulo da janela para um tamanho de conteudo, mantendo a ancora (o canto
- * de baixo a direita) no lugar e sem deixar nada sair da area util.
+ * O retangulo da janela a partir do canto parado.
+ *
+ * A janela pode sobrar para fora da tela do lado OPOSTO ao chip — e so
+ * transparencia, e do lado de dentro (para onde as coisas abrem) sempre ha a
+ * metade da tela, porque e ela que decide o `mainMode`.
  */
-function placeMain(width, height) {
-  if (!mainAnchor) mainAnchor = restingAnchor()
-  const display = screen.getDisplayNearestPoint(mainAnchor) || screen.getPrimaryDisplay()
-  const { workArea } = display
+function placeMain() {
+  if (!mainCorner) mainCorner = restingCorner()
+  const { width, height } = mainSize(mainCorner)
+  return {
+    x: Math.round(mainMode.right ? mainCorner.x : mainCorner.x - width),
+    y: Math.round(mainMode.down ? mainCorner.y : mainCorner.y - height),
+    width,
+    height,
+  }
+}
 
-  const w = Math.min(Math.max(1, Math.round(width)), workArea.width)
-  const h = Math.min(Math.max(1, Math.round(height)), workArea.height)
-  const x = Math.min(
-    Math.max(Math.round(mainAnchor.x) - w, workArea.x),
-    workArea.x + workArea.width - w,
-  )
-  const y = Math.min(
-    Math.max(Math.round(mainAnchor.y) - h, workArea.y),
-    workArea.y + workArea.height - h,
-  )
+/**
+ * O canto parado da janela, dado onde o chip esta na tela.
+ *
+ * `chip` e o retangulo da ancora (o chip, ou o que estiver no lugar dele) em
+ * coordenadas de tela. O conteudo encosta no canto com `MAIN_PAD` de folga,
+ * entao o canto da janela fica essa folga para fora do canto do chip.
+ */
+function cornerForChip(chip, mode) {
+  return {
+    x: mode.right ? chip.x - MAIN_PAD : chip.x + chip.width + MAIN_PAD,
+    y: mode.down ? chip.y - MAIN_PAD : chip.y + chip.height + MAIN_PAD,
+  }
+}
 
-  return { x: Math.round(x), y: Math.round(y), width: w, height: h }
+/**
+ * Para que lado as coisas devem abrir, com o chip neste lugar.
+ *
+ * A regra e a mais simples que existe: abre para o lado onde ha MAIS tela. Na
+ * metade de cima, abre para baixo; na metade da esquerda, abre para a direita.
+ * Nao depende do tamanho do que esta aberto — por isso nada vira e desvira
+ * quando a lista abre ou um aviso chega.
+ */
+function modeForChip(chip, current) {
+  const center = { x: chip.x + chip.width / 2, y: chip.y + chip.height / 2 }
+  const workArea = workAreaAt(center)
+  const midX = workArea.x + workArea.width / 2
+  const midY = workArea.y + workArea.height / 2
+  return {
+    down: current.down ? center.y <= midY + FLIP_HYSTERESIS : center.y < midY - FLIP_HYSTERESIS,
+    right: current.right ? center.x <= midX + FLIP_HYSTERESIS : center.x < midX - FLIP_HYSTERESIS,
+  }
+}
+
+/** O chip inteiro dentro da area util: soltar na borda nao deixa ele pela metade. */
+function clampChip(chip) {
+  const workArea = workAreaAt({ x: chip.x + chip.width / 2, y: chip.y + chip.height / 2 })
+  return {
+    ...chip,
+    x: Math.min(Math.max(chip.x, workArea.x), workArea.x + workArea.width - chip.width),
+    y: Math.min(Math.max(chip.y, workArea.y), workArea.y + workArea.height - chip.height),
+  }
 }
 
 /**
@@ -152,56 +231,164 @@ function applyAlwaysOnTop(value) {
   mainWindow.setAlwaysOnTop(Boolean(value), 'floating')
 }
 
-/** Dois retangulos sao o mesmo, a menos do arredondamento de DPI do Windows. */
-function nearBounds(a, b) {
-  return (
-    Math.abs(a.x - b.x) <= 2 &&
-    Math.abs(a.y - b.y) <= 2 &&
-    Math.abs(a.width - b.width) <= 2 &&
-    Math.abs(a.height - b.height) <= 2
-  )
+/**
+ * Liga/desliga o Calling subir sozinho com o Windows.
+ *
+ * `process.execPath` e o `.exe` que esta rodando agora — certo para o
+ * portatil, que roda de onde o Luiz deixou. Se ele mover ou renomear o
+ * arquivo, o registro do Windows continua apontando pro lugar velho ate
+ * a preferencia ser trocada de novo (desligada e religada), como em
+ * qualquer app portatil.
+ */
+function applyStartWithWindows(value) {
+  try {
+    app.setLoginItemSettings({ openAtLogin: Boolean(value), path: process.execPath })
+  } catch {
+    // Em `electron .` (desenvolvimento) isto aponta pro binario errado do
+    // Electron — nao ha o que aplicar fora de um empacotamento de verdade.
+  }
 }
 
-function applyMainBounds(bounds) {
+/** Poe a janela no lugar que o `mainCorner`/`mainMode` mandam, se ela nao estiver. */
+function applyMainPlacement() {
   if (!mainWindow || mainWindow.isDestroyed()) return
-  mainApplied = bounds
-  mainWindow.setBounds(bounds)
-  emitMainEdge()
+  const next = placeMain()
+  const current = mainWindow.getBounds()
+  if (
+    current.x === next.x &&
+    current.y === next.y &&
+    current.width === next.width &&
+    current.height === next.height
+  )
+    return
+  mainWindow.setBounds(next)
 }
 
-/* ------------------------------------------- a barra encostou na borda? --- */
+/* ------------------------------------------------ para que lado abre? --- */
 
-/** Ultimo estado ja avisado a pagina: so falamos quando ele muda. */
-let mainEdgeSent = null
+/** O que a pagina precisa saber para encostar o conteudo no canto certo. */
+function mainEdgeState() {
+  return { growDown: mainMode.down, growRight: mainMode.right }
+}
 
 /**
- * De onde a barra mora ate a borda direita da area util, em px.
+ * A TROCA DE LADO, SEM PISCAR.
  *
- * A conta e sobre a ANCORA (o canto de baixo a direita da janela), nao sobre o
- * retangulo atual: assim ela nao depende do tamanho do conteudo, que muda o
- * tempo todo. Sem isso, mudar o desenho por causa da borda mudaria a largura,
- * que mudaria a conta — e a engrenagem ficaria piscando de um lado para o
- * outro.
+ * Virar e duas coisas ao mesmo tempo: a pagina encosta o conteudo no outro
+ * canto e a janela anda para o chip continuar onde estava. Sao dois processos,
+ * e qualquer ordem deixa um quadro com os dois desencontrados — o chip
+ * aparecendo do outro lado da janela por um instante.
+ *
+ * Entao a pagina se esconde primeiro: ela recebe o lado novo com um numero
+ * (`swap`), apaga o conteudo, vira o CSS e confirma (`calling:edge-ready`).
+ * So entao a janela anda — com nada desenhado — e a pagina reaparece ja no
+ * lugar. Se a confirmacao nao vier (pagina travada), o relogio troca assim
+ * mesmo.
  */
-function mainRightGap() {
-  const anchor = mainAnchor || restingAnchor()
-  const display = screen.getDisplayNearestPoint(anchor) || screen.getPrimaryDisplay()
-  const { workArea } = display
-  return Math.round(workArea.x + workArea.width - anchor.x)
-}
+let swapSeq = 0
+let pendingSwap = null
 
-/** O que a pagina precisa saber sobre onde a janela esta. */
-function mainEdgeState() {
-  return { rightEdge: mainRightGap() < MAIN_EDGE_MARGIN }
-}
+/** Ultima posicao conhecida do chip, em coordenadas de tela. */
+let lastChip = null
 
-/** Conta para a janela da barra, se algo mudou (a pagina decide o desenho). */
-function emitMainEdge() {
+function startSwap(mode) {
   if (!mainWindow || mainWindow.isDestroyed()) return
-  const state = mainEdgeState()
-  if (mainEdgeSent && mainEdgeSent.rightEdge === state.rightEdge) return
-  mainEdgeSent = state
-  mainWindow.webContents.send('calling:main-edge', state)
+  const token = ++swapSeq
+  pendingSwap = {
+    token,
+    mode,
+    timer: setTimeout(() => commitSwap(token), SWAP_FALLBACK_MS),
+  }
+  mainWindow.webContents.send('calling:main-edge', {
+    growDown: mode.down,
+    growRight: mode.right,
+    swap: token,
+  })
+}
+
+function commitSwap(token) {
+  if (!pendingSwap || pendingSwap.token !== token) return
+  clearTimeout(pendingSwap.timer)
+  mainMode = pendingSwap.mode
+  pendingSwap = null
+  // O chip fica onde esta; quem muda e o canto parado da janela.
+  if (lastChip) mainCorner = cornerForChip(lastChip, mainMode)
+  applyMainPlacement()
+}
+
+/* ------------------------------------------------------------ arrasto --- */
+
+/**
+ * O ARRASTO E DO APP, NAO DO SISTEMA.
+ *
+ * O `-webkit-app-region: drag` entrega o arrasto ao Windows, e ai nada aqui
+ * sabe quando ele comeca ou termina — nem da para virar a coluna no meio do
+ * caminho. Pior: uma regiao de arrasto nao recebe os eventos de mouse que a
+ * janela transparente precisa para saber quando deixar o clique passar.
+ *
+ * Agora a pagina diz "comecou" (com onde o chip esta nela), a janela segue o
+ * cursor por aqui, e a pagina diz "soltou".
+ */
+let drag = null
+
+/** Onde o chip estaria agora, pelo cursor. */
+function chipAtCursor() {
+  const cursor = screen.getCursorScreenPoint()
+  return {
+    x: cursor.x - drag.grab.x,
+    y: cursor.y - drag.grab.y,
+    width: drag.size.width,
+    height: drag.size.height,
+  }
+}
+
+function dragTick() {
+  if (!drag || !mainWindow || mainWindow.isDestroyed()) return
+  const chip = chipAtCursor()
+  lastChip = chip
+
+  // Passou da linha do meio: a coluna vira no meio do arrasto, nao so no fim.
+  if (!pendingSwap) {
+    const wanted = modeForChip(chip, mainMode)
+    if (wanted.down !== mainMode.down || wanted.right !== mainMode.right) startSwap(wanted)
+  }
+
+  mainCorner = cornerForChip(chip, mainMode)
+  applyMainPlacement()
+}
+
+/**
+ * @param {{x:number,y:number,width:number,height:number}} rect o chip, em coordenadas da pagina
+ */
+function startDrag(rect) {
+  if (!mainWindow || mainWindow.isDestroyed() || !rect) return
+  stopDrag()
+  const bounds = mainWindow.getContentBounds()
+  const cursor = screen.getCursorScreenPoint()
+  drag = {
+    grab: { x: cursor.x - (bounds.x + rect.x), y: cursor.y - (bounds.y + rect.y) },
+    size: { width: Math.round(rect.width), height: Math.round(rect.height) },
+    timer: setInterval(dragTick, DRAG_TICK_MS),
+  }
+}
+
+function stopDrag() {
+  if (!drag) return
+  clearInterval(drag.timer)
+  drag = null
+}
+
+function endDrag() {
+  if (!drag) return
+  const chip = clampChip(chipAtCursor())
+  stopDrag()
+  lastChip = chip
+  // Soltou com o chip saindo da tela: ele volta inteiro. O lado nao muda
+  // aqui — e o que ja estava na tela durante o arrasto.
+  if (!pendingSwap) {
+    mainCorner = cornerForChip(chip, mainMode)
+    applyMainPlacement()
+  }
 }
 
 /** Mostra a janela na primeira vez — e so na primeira. */
@@ -218,32 +405,10 @@ function revealMainWindow() {
   mainWindow.showInactive()
 }
 
-/**
- * A janela acompanha o TAMANHO DO CONTEUDO — a mesma ideia do painel da
- * engrenagem, aqui para a janela principal. Sem isso a moldura sobraria em
- * volta do cartao: fundo preto enorme atras de um cartaozinho.
- *
- * @param {{width:number, height:number}} size tamanho do conteudo, em px de pagina
- */
-function resizeMainWindow(size) {
-  if (!mainWindow || mainWindow.isDestroyed()) return
-
-  const width = Math.max(96, Math.round(size?.width || 0))
-  const height = Math.max(48, Math.round(size?.height || 0))
-  const current = mainWindow.getBounds()
-
-  if (Math.abs(current.width - width) >= 2 || Math.abs(current.height - height) >= 2) {
-    applyMainBounds(placeMain(width, height))
-  }
-  revealMainWindow()
-}
-
 async function createWindow() {
-  const { width, height } = MAIN_START
-
   const win = new BrowserWindow({
-    ...placeMain(width, height),
-    // Nasce escondida: so aparece quando a pagina ja disse o tamanho dela.
+    ...placeMain(),
+    // Nasce escondida: so aparece quando a pagina montou.
     show: false,
     // Sem moldura do sistema. O Calling e um widget de canto, nao uma janela de
     // app com titulo e botoes — quem mostra/esconde e encerra e a bandeja, e a
@@ -263,9 +428,10 @@ async function createWindow() {
     // profundidade agora e o `box-shadow` do proprio cartao, no CSS.
     hasShadow: false,
     resizable: false,
-    // "Sempre no topo" e uma preferencia do Luiz, nao um padrao: uma barrinha
-    // que insiste em ficar por cima de tudo atrapalha mais do que ajuda quando
-    // ninguem pediu.
+    // Fora da barra de tarefas: o Calling fica ativo sem um botao "aberto" la
+    // embaixo, como o Wispr Flow. Quem mostra/esconde e encerra e a bandeja.
+    skipTaskbar: true,
+    // "Sempre no topo" nasce ligado (ver DEFAULT_PREFS); a bandeja desliga.
     alwaysOnTop: store.getPrefs().alwaysOnTop,
     maximizable: false,
     fullscreenable: false,
@@ -280,47 +446,22 @@ async function createWindow() {
   })
   mainWindow = win
   mainRevealed = false
-  mainApplied = null
 
-  // Quem manda mostrar e a pagina, quando ela diz o tamanho do conteudo
-  // (`calling:resize-main`). O relogio aqui e so a rede de seguranca: se a
-  // pagina nao carregar (build faltando, erro), a janela aparece assim mesmo.
+  // Quem manda mostrar e a pagina, quando monta (`calling:main-ready`). O
+  // relogio aqui e so a rede de seguranca: se a pagina nao carregar (build
+  // faltando, erro), a janela aparece assim mesmo.
   win.once('ready-to-show', () => {
     mainRevealTimer = setTimeout(() => revealMainWindow(), 1500)
   })
 
-  // Arrastou a janela: a ancora vai junto, senao o proximo redimensionamento a
-  // jogaria de volta para o canto.
-  win.on('move', () => {
-    if (win.isDestroyed()) return
-    const bounds = win.getBounds()
-
-    /*
-     * Foi a MAO do Luiz, ou fomos nos?
-     *
-     * `setBounds` tambem dispara `move`, e so o arrasto de verdade pode mexer
-     * na ancora. A comparacao era por igualdade exata nos quatro numeros — e o
-     * Windows devolve os nossos proprios valores com um pixel de diferenca
-     * quando ha escala de DPI. Um pixel bastava: o guarda falhava, a ancora era
-     * recalculada a partir da posicao ja deslocada, e o proximo
-     * redimensionamento saia daquele lugar novo. Com varios seguidos (o chip
-     * abrindo), a janela caminhava sozinha pela tela.
-     *
-     * Dois pixels de tolerancia separam o ruido de arredondamento de um arrasto
-     * (que move dezenas de pixels), e a janela para de andar.
-     */
-    if (mainApplied && nearBounds(bounds, mainApplied)) return
-
-    mainAnchor = { x: bounds.x + bounds.width, y: bounds.y + bounds.height }
-    // Arrastar a barra para o canto e justamente o que faz a engrenagem descer.
-    emitMainEdge()
-  })
-
   // Recarregou (salvar pelo painel recarrega a barra): a pagina nova nao ouviu
-  // nada ainda, entao repetimos o recado.
+  // nada ainda. Uma troca de lado que estava no meio do caminho vale ja, e o
+  // clique volta a ser da janela ate a pagina nova dizer onde estao os cartoes.
   win.webContents.on('did-finish-load', () => {
-    mainEdgeSent = null
-    emitMainEdge()
+    if (pendingSwap) commitSwap(pendingSwap.token)
+    stopDrag()
+    win.setIgnoreMouseEvents(false)
+    win.webContents.send('calling:main-edge', mainEdgeState())
   })
 
   // Voltar para a barra e o mesmo que sair do painel — menu que fica aberto
@@ -338,8 +479,12 @@ async function createWindow() {
   win.on('closed', () => {
     if (mainWindow !== win) return
     mainWindow = null
-    mainApplied = null
     mainRevealed = false
+    stopDrag()
+    if (pendingSwap) {
+      clearTimeout(pendingSwap.timer)
+      pendingSwap = null
+    }
     if (mainRevealTimer) {
       clearTimeout(mainRevealTimer)
       mainRevealTimer = null
@@ -450,16 +595,43 @@ function registerIpc() {
 
   ipcMain.handle('calling:resize-config', (_event, height) => resizeConfigPanel(height))
 
-  // A janela da barra faz o mesmo que o painel: veste o tamanho do conteudo.
-  ipcMain.handle('calling:resize-main', (event, size) => {
-    // So a propria janela principal manda nisso (o painel tem o handler dele).
-    if (!mainWindow || mainWindow.isDestroyed()) return
-    if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return
-    resizeMainWindow(size)
+  /* A janela da barra. Tudo aqui so vale para ELA: o painel da engrenagem
+     tem moldura propria e nao atravessa clique. */
+  const fromMain = (event) =>
+    Boolean(mainWindow && !mainWindow.isDestroyed()) &&
+    BrowserWindow.fromWebContents(event.sender) === mainWindow
+
+  // A pagina montou: pode aparecer.
+  ipcMain.handle('calling:main-ready', (event) => {
+    if (fromMain(event)) revealMainWindow()
+  })
+
+  /* O CLIQUE ATRAVESSA O QUE NAO E CARTAO.
+     A pagina sabe o que esta debaixo do cursor e diz se aquilo e dela
+     (`true`) ou transparencia (`false`). Com `forward`, o movimento do mouse
+     continua chegando mesmo atravessando — e e por ele que a pagina percebe a
+     hora de pegar o clique de volta. */
+  ipcMain.handle('calling:mouse-capture', (event, capture) => {
+    if (!fromMain(event)) return
+    if (capture) mainWindow.setIgnoreMouseEvents(false)
+    else mainWindow.setIgnoreMouseEvents(true, { forward: true })
+  })
+
+  ipcMain.handle('calling:drag-start', (event, rect) => {
+    if (fromMain(event)) startDrag(rect)
+  })
+
+  ipcMain.handle('calling:drag-end', (event) => {
+    if (fromMain(event)) endDrag()
+  })
+
+  // A pagina ja virou o conteudo (e esta escondida): a janela pode andar.
+  ipcMain.handle('calling:edge-ready', (event, token) => {
+    if (fromMain(event)) commitSwap(token)
   })
 
   // A pagina pergunta ao nascer; depois disso quem fala primeiro somos nos
-  // (`calling:main-edge`), toda vez que a janela se mexe.
+  // (`calling:main-edge`), toda vez que o lado muda.
   ipcMain.handle('calling:get-main-edge', () => mainEdgeState())
 
   ipcMain.handle('calling:get-prefs', () => store.getPrefs())
@@ -470,6 +642,7 @@ function registerIpc() {
   ipcMain.handle('calling:set-prefs', (_event, patch) => {
     const prefs = store.savePrefs(patch)
     applyAlwaysOnTop(prefs.alwaysOnTop)
+    applyStartWithWindows(prefs.startWithWindows)
     refreshTrayMenu(prefs)
     return prefs
   })
@@ -495,6 +668,11 @@ app.whenReady().then(() => {
   registerIpc()
   void createWindow()
 
+  // O registro do Windows pode ter desalinhado do que esta gravado (o Luiz
+  // desligou pelo Configurações do sistema, por exemplo) — todo boot
+  // reaplica o que o Calling acha que e verdade.
+  applyStartWithWindows(store.getPrefs().startWithWindows)
+
   trayReady = Boolean(
     createTray({
       prefs: store.getPrefs(),
@@ -508,6 +686,11 @@ app.whenReady().then(() => {
         // nenhuma com ela, e era essa a `configWindow` que nao existia.
         configPanelWindow()?.webContents.send('calling:prefs', prefs)
       },
+      onStartWithWindows: (value) => {
+        const prefs = store.savePrefs({ startWithWindows: value })
+        applyStartWithWindows(prefs.startWithWindows)
+        configPanelWindow()?.webContents.send('calling:prefs', prefs)
+      },
       onQuit: () => {
         quitting = true
         app.quit()
@@ -515,9 +698,17 @@ app.whenReady().then(() => {
     }),
   )
 
-  // Mudou a resolucao, chegou/saiu um monitor, a barra de tarefas trocou de
-  // lado: a borda direita e outra, e a engrenagem pode ter que mudar de lugar.
-  screen.on('display-metrics-changed', () => emitMainEdge())
+  // Mudou a resolucao, saiu um monitor, a barra de tarefas trocou de lado: o
+  // canto parado volta para dentro da area util, e o chip junto.
+  screen.on('display-metrics-changed', () => {
+    if (!mainCorner || drag) return
+    const workArea = workAreaAt(mainCorner)
+    mainCorner = {
+      x: Math.min(Math.max(mainCorner.x, workArea.x), workArea.x + workArea.width),
+      y: Math.min(Math.max(mainCorner.y, workArea.y), workArea.y + workArea.height),
+    }
+    applyMainPlacement()
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow()
